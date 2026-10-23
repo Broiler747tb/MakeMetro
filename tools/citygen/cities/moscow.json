@@ -1,0 +1,8 @@
+{
+  "id": "moscow",
+  "name": "Moscow",
+  "bbox": [36.95, 55.38, 38.15, 56.05],
+  "centre": [37.6175, 55.752],
+  "jobsPerResident": 0.55,
+  "studentsPerResident": 0.18
+}

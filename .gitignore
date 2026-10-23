@@ -1,0 +1,6 @@
+node_modules/
+dist/
+public/cities/*/
+!public/cities/.keep
+.cache/
+*.log
