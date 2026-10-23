@@ -355,6 +355,7 @@ export class Game {
   /** Starts construction of all planned work. */
   /** Building outlines arrive after the game starts; until then nothing can be built. */
   buildingsReady = false;
+  buildingsProgress = 0;
 
   setBuildings(b: Buildings | null) {
     this.net.buildings = b;

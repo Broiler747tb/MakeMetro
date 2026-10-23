@@ -66,8 +66,6 @@ async function boot() {
   try {
     screen.step(10, "Reading the city…");
     const city = await loadCity(cityId);
-    // Building outlines are large; play starts without them and they arrive in the background.
-    const buildingsPromise = Buildings.load(cityUrl(cityId) + city.manifest.buildings);
     const state = await pickState(city);
     if (state.cityId !== city.id) throw new Error(`This save is for ${state.cityId}, not ${city.id}.`);
     screen.step(40, "Drawing the map…");
@@ -76,7 +74,9 @@ async function boot() {
     screen.step(80, "Starting the simulation…");
 
     const game = new Game(state, city, null);
-    buildingsPromise.then(
+    // Building outlines are large. Fetch them only once the map is up, so they don't hold up
+    // its first tiles, and let play start while they arrive.
+    Buildings.load(cityUrl(cityId) + city.manifest.buildings, (f) => (game.buildingsProgress = f)).then(
       (b) => game.setBuildings(b),
       (err) => {
         console.warn("buildings unavailable, demolition checks are off", err);

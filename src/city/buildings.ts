@@ -36,10 +36,22 @@ export class Buildings {
     this.buildIndex();
   }
 
-  static async load(url: string): Promise<Buildings> {
+  static async load(url: string, onProgress?: (fraction: number) => void): Promise<Buildings> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`${url}: ${res.status}`);
-    return new Buildings(await res.arrayBuffer());
+    const total = Number(res.headers.get("content-length")) || 0;
+    if (!res.body || !total || !onProgress) return new Buildings(await res.arrayBuffer());
+    const buf = new Uint8Array(total);
+    const reader = res.body.getReader();
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf.set(value, got);
+      got += value.length;
+      onProgress(got / total);
+    }
+    return new Buildings(buf.buffer);
   }
 
   height(i: number): number {

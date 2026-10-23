@@ -127,6 +127,7 @@ export class App {
   /** Called every animation frame. */
   frame() {
     this.updateClock();
+    if (!this.game.buildingsReady) this.updateBar();
     if (this.panelDirty) {
       this.panelDirty = false;
       const scroll = this.panel.scrollTop;
@@ -244,8 +245,12 @@ export class App {
     this.moneyEl.textContent = g.state.sandbox.unlimitedMoney ? "Unlimited" : fmt.money(g.state.money);
     this.moneyEl.className = "num" + (g.state.money < 0 && !g.state.sandbox.unlimitedMoney ? " bad" : "");
     const planned = g.plannedCost;
-    this.buildBtn.textContent = planned > 0 ? `Build plans · ${fmt.money(planned)}` : "Nothing planned";
-    this.buildBtn.disabled = planned <= 0 || g.state.gameOver;
+    this.buildBtn.textContent = !g.buildingsReady
+      ? `Loading buildings ${Math.round(g.buildingsProgress * 100)}%`
+      : planned > 0
+        ? `Build plans · ${fmt.money(planned)}`
+        : "Nothing planned";
+    this.buildBtn.disabled = planned <= 0 || g.state.gameOver || !g.buildingsReady;
   }
 
   private lastClock = "";
