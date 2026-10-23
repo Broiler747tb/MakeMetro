@@ -67,6 +67,13 @@ export class App {
   private clockEl = h("span", { class: "num" });
   private moneyEl = h("span", { class: "num" });
   private ridersEl = h("span", { class: "num" });
+  private savingEl = h("span", { class: "num" });
+  private savingStat = h(
+    "div",
+    { class: "stat", hidden: true, title: "Keeping the city on this computer, so it opens straight away next time and works offline" },
+    h("small", null, "Saving city"),
+    this.savingEl,
+  );
   private buildBtn = h("button", { class: "primary", onclick: () => this.build() });
   private speedBtns: HTMLButtonElement[] = [];
   private panelDirty = true;
@@ -235,7 +242,7 @@ export class App {
     const money = h("div", { class: "stat clickable", title: "Finances", onclick: () => openFinance(this) }, h("small", null, "Money"), this.moneyEl);
     const riders = h("div", { class: "stat" }, h("small", null, "Riders today"), this.ridersEl);
     const build = h("div", null, this.buildBtn);
-    this.bar.append(speeds, clock, money, riders, build);
+    this.bar.append(speeds, clock, money, riders, this.savingStat, build);
     this.updateBar();
   }
 
@@ -267,6 +274,12 @@ export class App {
         if (hour !== this.overlayHour) this.refreshOverlay();
       }
     }
+  }
+
+  /** Progress of saving the city to disk; null hides it. */
+  setSaving(fraction: number | null) {
+    this.savingStat.hidden = fraction === null;
+    if (fraction !== null) this.savingEl.textContent = `${Math.floor(fraction * 100)}%`;
   }
 
   build() {

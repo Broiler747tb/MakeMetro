@@ -2,6 +2,7 @@ import type { App } from "./app";
 import { h, lineChart, modal, row, seg } from "./dom";
 import * as fmt from "./format";
 import * as saves from "../save";
+import { CityStore } from "../city/store";
 import { ACTION_LABELS, DEFAULT_KEYS, keyLabel, keyOf, saveSettings, applySettings, type Action } from "../settings";
 
 export function openFinance(app: App) {
@@ -315,6 +316,31 @@ export function openSettings(app: App) {
         ),
       ),
     );
+  const storageRow = row("City data on this computer", h("span", { class: "muted" }, "…"));
+  CityStore.usage(g.city.id).then((bytes) => {
+    storageRow.replaceChildren(
+      h("label", null, "City data on this computer"),
+      h(
+        "span",
+        { style: { display: "flex", gap: "8px", alignItems: "center" } },
+        h("span", { class: "num" }, bytes ? `${Math.round(bytes / 1e6)} MB` : "none"),
+        bytes
+          ? h(
+              "button",
+              {
+                class: "link",
+                title: "It downloads again the next time you play",
+                onclick: async () => {
+                  await CityStore.forget(g.city.id);
+                  storageRow.querySelector(".num")!.textContent = "none";
+                },
+              },
+              "Remove",
+            )
+          : null,
+      ),
+    );
+  });
   const render = () => {
     const st = g.state;
     const periods = h(
@@ -412,6 +438,8 @@ export function openSettings(app: App) {
           onchange: (e: Event) => (s.safeColours = (e.target as HTMLInputElement).checked),
         }),
       ),
+      h("h3", null, "Storage"),
+      storageRow,
       h("h3", null, "This game"),
       row(
         "Unlimited money",

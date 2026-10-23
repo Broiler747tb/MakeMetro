@@ -1,4 +1,5 @@
 import { Projection, type ProjectionParams } from "./projection";
+import { CityStore } from "./store";
 
 export const GRID_LAYERS = [
   "residents",
@@ -38,6 +39,8 @@ export interface CityManifest {
   names: string;
   totals: { residents: number; jobs: number; education: number; buildings: number; jobsIndustry?: number };
   attribution: string[];
+  dem?: { tiles: string; encoding: "terrarium" | "mapbox"; minzoom: number; maxzoom: number };
+  generated?: string;
 }
 
 export interface Grid {
@@ -65,26 +68,39 @@ export interface City {
   proj: Projection;
   grid: Grid;
   names: NamedPoint[];
+  store: CityStore;
 }
 
 export function cityUrl(id: string): string {
   return `${import.meta.env.BASE_URL}cities/${id}/`;
 }
 
-async function fetchOk(url: string): Promise<Response> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: ${res.status} ${res.statusText}`);
-  return res;
+/** The manifest from the network, or the kept copy when offline. */
+async function loadManifest(id: string, url: string): Promise<CityManifest> {
+  try {
+    const res = await fetch(url, { cache: "no-cache" });
+    if (res.ok) return await res.json();
+  } catch {
+    // Offline: fall through to the kept copy.
+  }
+  const kept = await CityStore.anyKept(id, url);
+  if (!kept) throw new Error(`Can't reach ${url}, and this city hasn't been saved for offline play yet.`);
+  return kept.json();
 }
 
 export async function loadCity(id: string): Promise<City> {
   const baseUrl = cityUrl(id);
-  const manifest: CityManifest = await (await fetchOk(baseUrl + "city.json")).json();
+  const manifestUrl = new URL(baseUrl + "city.json", location.href).href;
+  const manifest = await loadManifest(id, manifestUrl);
   if (manifest.format !== 1) throw new Error(`Unsupported city pack format ${manifest.format}`);
 
+  const store = await CityStore.open(id, manifest.generated ?? "1", baseUrl);
+  await store.get("city.json");
+  // A city saved on an earlier visit draws its map straight from disk.
+  await store.restore(manifest.basemap);
   const [gridBuf, names] = await Promise.all([
-    fetchOk(baseUrl + manifest.grid.file).then((r) => r.arrayBuffer()),
-    fetchOk(baseUrl + manifest.names).then((r) => r.json() as Promise<NamedPoint[]>),
+    store.get(manifest.grid.file),
+    store.get(manifest.names).then((b) => JSON.parse(new TextDecoder().decode(b)) as NamedPoint[]),
   ]);
 
   const g = manifest.grid;
@@ -105,6 +121,7 @@ export async function loadCity(id: string): Promise<City> {
     proj: new Projection(manifest.projection),
     grid: { x0: g.x0, y0: g.y0, cellSize: g.cellSize, cols: g.cols, rows: g.rows, layers },
     names,
+    store,
   };
 }
 

@@ -105,6 +105,7 @@ The core loop is: place stations, connect them with track, then place a depot an
 ## Look and feel
 
 - **Overall:** balanced and minimal, so the map stays the focus. Data overlays work like those in city builders.
+- **Map:** hill shading from the elevation data, buildings lit from the south-west with shadows that grow with their height, a hazy horizon when tilted, and trees in parks, woods and on lawns.
 - **Overlays:** population and jobs, passenger flows, crowding, and a travel-time map from any point.
 - **Charts:** riders per hour, load and revenue for each line and station over the day.
 - **Alerts:** a quiet log. Only things that need action pop up.
@@ -140,7 +141,7 @@ The core loop is: place stations, connect them with track, then place a depot an
 
 Milestone 1 is playable in a browser on Moscow. Done so far:
 
-- **Map and data:** an offline basemap with light and dark themes, a tilting 3D camera with extruded buildings, x-ray view of tunnels, and population, jobs, districts, flows, crowding and travel-time overlays.
+- **Map and data:** the whole city is saved to the computer in the background on the first visit, then loads from disk; hill shading, building shadows and trees; light and dark themes, a tilting 3D camera with extruded buildings, x-ray view of tunnels, and population, jobs, districts, flows, crowding and travel-time overlays.
 - **Building:**
   - Stations placed on their own and turned with a handle; chained connections with straight platforms and smooth curves; bending by dragging; free track and junctions; depot yards linked by track.
   - The four construction types, depth and height, and single, double or quad track.

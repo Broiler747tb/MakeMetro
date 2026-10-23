@@ -58,6 +58,7 @@ y = (lat - lat0) * mPerDegLat
   - `retail`, `leisure`, `nature` and `nightlife` are unitless and scaled to sum to the resident total.
   - `elevation` is metres above sea level at the cell centre.
   - `water` and `built` are the share of the cell covered.
+- **`dem/{z}/{x}/{y}.png`**: Terrarium elevation tiles for the bbox at zooms 8 to 12, used for hill shading. `city.json` lists them under `dem`.
 - **`buildings.bin`**: the file is laid out in this order:
   - A header of four uint32: magic `0x44424D4D` ("MMBD"), version 1, count, vertexCount.
   - float32 `props[count * 6]`: cx, cy, height (m), floor area (m²), residents, jobs.

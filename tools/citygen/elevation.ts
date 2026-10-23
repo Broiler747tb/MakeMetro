@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { PNG } from "pngjs";
 import { cachePath, download, runPool } from "./cache";
 import { latToTileY, lonToTileX, tileRange, type BBox } from "./projection";
@@ -58,4 +59,28 @@ function decodeTerrarium(buf: Buffer): Float32Array {
   const d = png.data;
   for (let i = 0; i < out.length; i++) out[i] = d[4 * i] * 256 + d[4 * i + 1] + d[4 * i + 2] / 256 - 32768;
   return out;
+}
+
+/**
+ * Copies Terrarium tiles for the bbox into the pack so the game can shade hills. The pack
+ * keeps them as plain PNG files, at the zooms where hill shading shows.
+ */
+export async function writeTerrainTiles(bbox: BBox, outDir: string, minZoom = 8, maxZoom = ZOOM): Promise<{ count: number; bytes: number }> {
+  const jobs: { z: number; x: number; y: number }[] = [];
+  for (let z = minZoom; z <= maxZoom; z++) {
+    const r = tileRange(bbox, z);
+    for (let y = r.minY; y <= r.maxY; y++) for (let x = r.minX; x <= r.maxX; x++) jobs.push({ z, x, y });
+  }
+  let bytes = 0;
+  let count = 0;
+  await runPool(jobs, 8, async ({ z, x, y }) => {
+    const src = cachePath("terrarium", String(z), String(x), `${y}.png`);
+    if (!(await download(`${URL}/${z}/${x}/${y}.png`, src))) return;
+    const dst = join(outDir, "dem", String(z), String(x), `${y}.png`);
+    mkdirSync(dirname(dst), { recursive: true });
+    copyFileSync(src, dst);
+    bytes += statSync(dst).size;
+    count++;
+  });
+  return { count, bytes };
 }

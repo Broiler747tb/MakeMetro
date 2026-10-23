@@ -6,7 +6,7 @@ import { cachePath } from "./cache";
 import { collectFeatures } from "./collect";
 import { loadConfig } from "./config";
 import { distributeAttractions, distributeJobs, distributeResidents } from "./demand";
-import { Elevation } from "./elevation";
+import { Elevation, writeTerrainTiles } from "./elevation";
 import { Grid, GRID_LAYERS } from "./grid";
 import { classifyBuildings, paintLand } from "./landuse";
 import { buildNames } from "./names";
@@ -108,6 +108,7 @@ async function main() {
 
   const outDir = join(OUTPUT_DIR, id);
   mkdirSync(outDir, { recursive: true });
+  const dem = await step("Terrain tiles", () => writeTerrainTiles(config.bbox, outDir));
   const files = await step("Writing", () => {
     const basemapOut = join(outDir, "basemap.pmtiles");
     copyFileSync(basemap.path, basemapOut);
@@ -142,6 +143,7 @@ async function main() {
       },
       buildings: "buildings.bin",
       names: "names.json",
+      dem: { tiles: "dem/{z}/{x}/{y}.png", encoding: "terrarium", minzoom: 8, maxzoom: 12 },
       totals,
       attribution: ATTRIBUTION,
       generated: new Date().toISOString(),
@@ -169,6 +171,7 @@ async function main() {
   console.log(`
 ${config.name} (${config.id}), grid ${grid.cols} x ${grid.rows} at ${config.cellSize} m
 Sources: Protomaps build ${basemap.build}, ${population.tiles.join(", ")}, ${elevation.tileCount} terrain tiles
+Terrain tiles in the pack: ${dem.count}, ${(dem.bytes / 1e6).toFixed(1)} MB
 Tiles read: ${fmt(features.tiles)}
 Residents: ${fmt(residents)} (GHSL in bbox ${fmt(housed.total)}, ${fmt(housed.unhoused)} not matched to buildings)
 Jobs: ${fmt(jobs)} (industrial ${fmt(industry)}, ${((100 * industry) / jobs).toFixed(1)}%)   Education places: ${fmt(grid.sum("education"))}

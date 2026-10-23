@@ -16,6 +16,7 @@ function flatCity(): City {
     grid: { x0: -7500, y0: -7500, cellSize: 250, cols, rows, layers },
     names: [],
     manifest: { totals: { residents: 1e6, jobs: 5e5, education: 1e5, buildings: 0 } } as City["manifest"],
+    store: null as unknown as City["store"],
   };
 }
 

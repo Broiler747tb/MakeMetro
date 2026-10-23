@@ -1,100 +1,175 @@
-import type { StyleSpecification, LayerSpecification } from "maplibre-gl";
+import type { StyleSpecification, LayerSpecification, LightSpecification, SkySpecification } from "maplibre-gl";
 
 export type Theme = "light" | "dark";
 
 interface Palette {
   earth: string;
+  residential: string;
+  commercial: string;
+  industrial: string;
+  grass: string;
   park: string;
   wood: string;
-  residential: string;
-  industrial: string;
   water: string;
-  waterLine: string;
+  waterEdge: string;
   roadMinor: string;
   roadMajor: string;
-  roadHighway: string;
   roadCasing: string;
+  roadHighway: string;
+  highwayCasing: string;
+  path: string;
   rail: string;
-  building: string;
-  buildingTop: string;
+  buildingLow: string;
+  buildingMid: string;
+  buildingHigh: string;
+  shadow: string;
+  shadowOpacity: number;
+  hillShadow: string;
+  hillHighlight: string;
   boundary: string;
   label: string;
   labelMuted: string;
   labelHalo: string;
+  sky: string;
+  horizon: string;
 }
 
 const palettes: Record<Theme, Palette> = {
   light: {
-    earth: "#eeeeec",
-    park: "#dfe7d8",
-    wood: "#d7e1cf",
-    residential: "#e9e9e6",
-    industrial: "#e6e4e1",
-    water: "#c6d5e0",
-    waterLine: "#b3c5d3",
-    roadMinor: "#fbfbfa",
+    earth: "#ecebe6",
+    residential: "#e7e5df",
+    commercial: "#ebe5df",
+    industrial: "#e3e0dc",
+    grass: "#dce6cf",
+    park: "#cfe0c1",
+    wood: "#bed4ae",
+    water: "#a8c7dc",
+    waterEdge: "#8fb2cb",
+    roadMinor: "#ffffff",
     roadMajor: "#ffffff",
-    roadHighway: "#ffffff",
-    roadCasing: "#d9d9d5",
-    rail: "#c8c8c3",
-    building: "#e0dfdb",
-    buildingTop: "#e4e3df",
-    boundary: "#c4c4bf",
-    label: "#5a5a56",
-    labelMuted: "#8c8c87",
-    labelHalo: "#eeeeec",
+    roadCasing: "#d4d2cb",
+    roadHighway: "#fbf1dc",
+    highwayCasing: "#dcc89f",
+    path: "#c9c6bd",
+    rail: "#b9b7b0",
+    buildingLow: "#d9d6cf",
+    buildingMid: "#e2dfd9",
+    buildingHigh: "#ece9e4",
+    shadow: "#2e3340",
+    shadowOpacity: 0.3,
+    hillShadow: "#6f6857",
+    hillHighlight: "#ffffff",
+    boundary: "#c4c2bb",
+    label: "#4d4b46",
+    labelMuted: "#86837b",
+    labelHalo: "#f1f0eb",
+    sky: "#d9e4ee",
+    horizon: "#eef1f2",
   },
   dark: {
-    earth: "#17181a",
-    park: "#1b221e",
-    wood: "#1a211c",
-    residential: "#191a1c",
-    industrial: "#1b1b1d",
-    water: "#131c25",
-    waterLine: "#1a2632",
-    roadMinor: "#24262a",
-    roadMajor: "#2c2e33",
-    roadHighway: "#34373c",
-    roadCasing: "#17181a",
-    rail: "#2a2c30",
-    building: "#222326",
-    buildingTop: "#26272a",
-    boundary: "#33353a",
-    label: "#a4a6aa",
-    labelMuted: "#6e7075",
-    labelHalo: "#17181a",
+    earth: "#1b1d21",
+    residential: "#1d1f24",
+    commercial: "#211f24",
+    industrial: "#1f2024",
+    grass: "#1f2722",
+    park: "#1e2a22",
+    wood: "#1a2620",
+    water: "#0f1d2b",
+    waterEdge: "#1c3348",
+    roadMinor: "#2a2d33",
+    roadMajor: "#353942",
+    roadCasing: "#16181b",
+    roadHighway: "#45413a",
+    highwayCasing: "#16181b",
+    path: "#30343a",
+    rail: "#34373d",
+    buildingLow: "#2b2d33",
+    buildingMid: "#32353b",
+    buildingHigh: "#3d4048",
+    shadow: "#000000",
+    shadowOpacity: 0.55,
+    hillShadow: "#000000",
+    hillHighlight: "#4a5262",
+    boundary: "#383b41",
+    label: "#b8babe",
+    labelMuted: "#7d8086",
+    labelHalo: "#1b1d21",
+    sky: "#0d1118",
+    horizon: "#20252d",
   },
 };
 
 const SRC = "base";
+const DEM = "dem";
 const FONT = ["Noto Sans Regular"];
 const FONT_MEDIUM = ["Noto Sans Medium"];
+
+// The sun sits to the south-south-west: buildings are lit from there and throw their shadows
+// the other way. Shadows are cast from a lower, late-afternoon sun so they read at city scale.
+const SUN_AZIMUTH = 210;
+const SUN_FROM_ZENITH = 35;
+const SHADOW_SUN_FROM_ZENITH = 55;
+const SHADOW_DIR = [Math.sin(((SUN_AZIMUTH + 180) * Math.PI) / 180), -Math.cos(((SUN_AZIMUTH + 180) * Math.PI) / 180)];
+// MapLibre's world is 512 px wide at zoom 0.
+const METRES_PER_PIXEL_AT_Z0 = (40075016.686 / 512) * Math.cos((55.75 * Math.PI) / 180);
 
 // The basemap stays quiet: no POIs, and no metro, light rail or tram, since the player
 // builds the network from scratch.
 const notUrbanRail: any = ["!", ["in", ["get", "kind_detail"], ["literal", ["subway", "light_rail", "tram", "monorail", "funicular"]]]];
 
-function layers(c: Palette): LayerSpecification[] {
+/** Footprints shifted away from the sun, one layer per height band, so taller blocks cast longer shadows. */
+function shadowLayers(c: Palette): LayerSpecification[] {
+  const bands: [number, number, number][] = [
+    [0, 15, 9],
+    [15, 40, 25],
+    [40, 100, 60],
+    [100, 1000, 150],
+  ];
+  const height: any = ["coalesce", ["get", "height"], 9];
+  return bands.map(([lo, hi, typical]) => {
+    const metres = typical * Math.tan((SHADOW_SUN_FROM_ZENITH * Math.PI) / 180);
+    const at = (z: number) => {
+      const px = (metres * 2 ** z) / METRES_PER_PIXEL_AT_Z0;
+      return [SHADOW_DIR[0] * px, SHADOW_DIR[1] * px];
+    };
+    return {
+      id: `building-shadow-${lo}`,
+      type: "fill",
+      source: SRC,
+      "source-layer": "buildings",
+      minzoom: 13,
+      filter: ["all", [">=", height, lo], ["<", height, hi]],
+      paint: {
+        "fill-color": c.shadow,
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, c.shadowOpacity],
+        "fill-translate": ["interpolate", ["exponential", 2], ["zoom"], 13, ["literal", at(13)], 20, ["literal", at(20)]],
+        "fill-translate-anchor": "map",
+        "fill-antialias": false,
+      },
+    } as LayerSpecification;
+  });
+}
+
+function layers(c: Palette, withDem: boolean): LayerSpecification[] {
   const name: any = ["coalesce", ["get", "name"], ["get", "name:en"]];
-  return [
+  const landuse = (id: string, kinds: string[], color: string, minzoom = 0): LayerSpecification => ({
+    id,
+    type: "fill",
+    source: SRC,
+    "source-layer": "landuse",
+    minzoom,
+    filter: ["in", ["get", "kind"], ["literal", kinds]],
+    paint: { "fill-color": color },
+  });
+  const out: LayerSpecification[] = [
     { id: "background", type: "background", paint: { "background-color": c.earth } },
     { id: "earth", type: "fill", source: SRC, "source-layer": "earth", paint: { "fill-color": c.earth } },
-    {
-      id: "landuse-park",
-      type: "fill",
-      source: SRC,
-      "source-layer": "landuse",
-      filter: ["in", ["get", "kind"], ["literal", ["park", "garden", "cemetery", "golf_course", "grass", "meadow", "nature_reserve", "national_park", "protected_area", "recreation_ground", "playground", "village_green", "allotments"]]],
-      paint: { "fill-color": c.park },
-    },
-    {
-      id: "landuse-wood",
-      type: "fill",
-      source: SRC,
-      "source-layer": "landuse",
-      filter: ["in", ["get", "kind"], ["literal", ["forest", "wood"]]],
-      paint: { "fill-color": c.wood },
-    },
+    landuse("landuse-residential", ["residential"], c.residential, 11),
+    landuse("landuse-commercial", ["commercial", "retail"], c.commercial, 11),
+    landuse("landuse-industrial", ["industrial", "railway", "military", "brownfield", "aerodrome", "runway", "apron"], c.industrial),
+    landuse("landuse-grass", ["grass", "meadow", "grassland", "village_green", "allotments", "cemetery", "golf_course", "recreation_ground", "playground"], c.grass),
+    landuse("landuse-park", ["park", "garden", "nature_reserve", "national_park", "protected_area"], c.park),
+    landuse("landuse-wood", ["forest", "wood"], c.wood),
     {
       id: "landcover-wood",
       type: "fill",
@@ -103,22 +178,59 @@ function layers(c: Palette): LayerSpecification[] {
       filter: ["in", ["get", "kind"], ["literal", ["forest"]]],
       paint: { "fill-color": c.wood },
     },
-    {
-      id: "landuse-industrial",
-      type: "fill",
-      source: SRC,
-      "source-layer": "landuse",
-      filter: ["in", ["get", "kind"], ["literal", ["industrial", "railway", "military", "brownfield", "aerodrome", "runway", "apron"]]],
-      paint: { "fill-color": c.industrial },
-    },
+  ];
+  if (withDem) {
+    out.push({
+      id: "hillshade",
+      type: "hillshade",
+      source: DEM,
+      paint: {
+        "hillshade-exaggeration": 0.45,
+        "hillshade-shadow-color": c.hillShadow,
+        "hillshade-highlight-color": c.hillHighlight,
+        "hillshade-accent-color": c.hillShadow,
+        "hillshade-illumination-direction": SUN_AZIMUTH,
+        "hillshade-illumination-anchor": "map",
+      },
+    } as LayerSpecification);
+  }
+  out.push(
     { id: "water", type: "fill", source: SRC, "source-layer": "water", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": c.water } },
+    {
+      id: "water-edge",
+      type: "line",
+      source: SRC,
+      "source-layer": "water",
+      minzoom: 11,
+      filter: ["==", ["geometry-type"], "Polygon"],
+      paint: { "line-color": c.waterEdge, "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.4, 16, 1.4] },
+    },
     {
       id: "water-line",
       type: "line",
       source: SRC,
       "source-layer": "water",
       filter: ["==", ["geometry-type"], "LineString"],
-      paint: { "line-color": c.waterLine, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 15, 2] },
+      paint: { "line-color": c.water, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 15, 2.5] },
+    },
+    {
+      id: "paths",
+      type: "line",
+      source: SRC,
+      "source-layer": "roads",
+      minzoom: 15,
+      filter: ["==", ["get", "kind"], "path"],
+      paint: { "line-color": c.path, "line-width": ["interpolate", ["linear"], ["zoom"], 15, 0.6, 18, 2], "line-dasharray": [2, 1.5] },
+    },
+    {
+      id: "roads-minor-casing",
+      type: "line",
+      source: SRC,
+      "source-layer": "roads",
+      minzoom: 14,
+      filter: ["in", ["get", "kind"], ["literal", ["minor_road", "other"]]],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": c.roadCasing, "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 14, 2.2, 18, 15] },
     },
     {
       id: "roads-minor",
@@ -136,7 +248,7 @@ function layers(c: Palette): LayerSpecification[] {
       source: SRC,
       "source-layer": "roads",
       minzoom: 11,
-      filter: ["in", ["get", "kind"], ["literal", ["major_road", "highway"]]],
+      filter: ["==", ["get", "kind"], "major_road"],
       layout: { "line-cap": "round", "line-join": "round" },
       paint: { "line-color": c.roadCasing, "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 11, 1.2, 15, 7, 18, 22] },
     },
@@ -148,6 +260,16 @@ function layers(c: Palette): LayerSpecification[] {
       filter: ["==", ["get", "kind"], "major_road"],
       layout: { "line-cap": "round", "line-join": "round" },
       paint: { "line-color": c.roadMajor, "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 8, 0.4, 15, 5, 18, 18] },
+    },
+    {
+      id: "roads-highway-casing",
+      type: "line",
+      source: SRC,
+      "source-layer": "roads",
+      minzoom: 9,
+      filter: ["==", ["get", "kind"], "highway"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": c.highwayCasing, "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 9, 1.4, 15, 8, 18, 24] },
     },
     {
       id: "roads-highway",
@@ -175,6 +297,7 @@ function layers(c: Palette): LayerSpecification[] {
       filter: ["<=", ["get", "kind_detail"], 4],
       paint: { "line-color": c.boundary, "line-width": 0.8, "line-dasharray": [4, 3] },
     },
+    ...shadowLayers(c),
     {
       id: "buildings",
       type: "fill-extrusion",
@@ -182,10 +305,11 @@ function layers(c: Palette): LayerSpecification[] {
       "source-layer": "buildings",
       minzoom: 13,
       paint: {
-        "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "height"], 9], 0, c.building, 120, c.buildingTop],
+        "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "height"], 9], 0, c.buildingLow, 40, c.buildingMid, 150, c.buildingHigh],
         "fill-extrusion-height": ["coalesce", ["get", "height"], 9],
         "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
-        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 0.9],
+        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 0.95],
+        "fill-extrusion-vertical-gradient": true,
       },
     },
     {
@@ -196,7 +320,7 @@ function layers(c: Palette): LayerSpecification[] {
       minzoom: 12,
       filter: ["has", "name"],
       layout: { "text-field": name, "text-font": ["Noto Sans Italic"], "text-size": 12, "symbol-placement": "line", "symbol-spacing": 400 },
-      paint: { "text-color": c.labelMuted, "text-halo-color": c.labelHalo, "text-halo-width": 1.2 },
+      paint: { "text-color": c.waterEdge, "text-halo-color": c.labelHalo, "text-halo-width": 1.2 },
     },
     {
       id: "road-labels",
@@ -230,20 +354,52 @@ function layers(c: Palette): LayerSpecification[] {
       },
       paint: { "text-color": c.label, "text-halo-color": c.labelHalo, "text-halo-width": 1.4 },
     },
-  ];
+  );
+  return out;
 }
 
-export function buildStyle(theme: Theme, basemapUrl: string): StyleSpecification {
+export function lightFor(theme: Theme): LightSpecification {
+  return { anchor: "map", position: [1.15, SUN_AZIMUTH, SUN_FROM_ZENITH], color: "#ffffff", intensity: theme === "dark" ? 0.3 : 0.4 };
+}
+
+export function skyFor(theme: Theme): SkySpecification {
+  const c = palettes[theme];
   return {
-    version: 8,
-    glyphs: `${location.origin}${import.meta.env.BASE_URL}fonts/{fontstack}/{range}.pbf`,
-    sources: {
-      [SRC]: { type: "vector", url: `pmtiles://${basemapUrl}`, attribution: '<a href="https://openstreetmap.org/copyright">© OpenStreetMap</a> · <a href="https://protomaps.com">Protomaps</a>' },
-    },
-    layers: layers(palettes[theme]),
+    "sky-color": c.sky,
+    "horizon-color": c.horizon,
+    "fog-color": c.earth,
+    "sky-horizon-blend": 0.7,
+    "horizon-fog-blend": 0.8,
+    "fog-ground-blend": 0.75,
+    "atmosphere-blend": 0,
   };
 }
 
-export function paletteFor(theme: Theme): Palette {
-  return palettes[theme];
+export interface StyleSources {
+  basemap: string; // pmtiles:// URL
+  dem?: { tiles: string; encoding: "terrarium" | "mapbox"; minzoom: number; maxzoom: number };
+  bounds: [number, number, number, number];
+}
+
+export function buildStyle(theme: Theme, src: StyleSources): StyleSpecification {
+  const sources: StyleSpecification["sources"] = {
+    [SRC]: { type: "vector", url: src.basemap, attribution: '<a href="https://openstreetmap.org/copyright">© OpenStreetMap</a> · <a href="https://protomaps.com">Protomaps</a>' },
+  };
+  if (src.dem) {
+    // The pack only has terrain for the city itself.
+    sources[DEM] = { type: "raster-dem", tiles: [src.dem.tiles], encoding: src.dem.encoding, tileSize: 256, minzoom: src.dem.minzoom, maxzoom: src.dem.maxzoom, bounds: src.bounds };
+  }
+  return {
+    version: 8,
+    glyphs: `${location.origin}${import.meta.env.BASE_URL}fonts/{fontstack}/{range}.pbf`,
+    light: lightFor(theme),
+    sky: skyFor(theme),
+    sources,
+    layers: layers(palettes[theme], !!src.dem),
+  };
+}
+
+/** The same layers with another theme's colours, for switching without rebuilding the map. */
+export function themedLayers(theme: Theme, withDem: boolean): LayerSpecification[] {
+  return layers(palettes[theme], withDem);
 }

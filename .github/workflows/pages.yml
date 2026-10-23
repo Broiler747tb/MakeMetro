@@ -37,7 +37,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: .cache/citygen
-          key: citygen-${{ hashFiles('tools/citygen/cities/*.json') }}
+          key: citygen-${{ hashFiles('tools/citygen/cities/*.json', 'tools/citygen/elevation.ts') }}
           restore-keys: citygen-
 
       - run: npm ci

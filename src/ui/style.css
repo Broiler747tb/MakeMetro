@@ -394,6 +394,10 @@ table.grid input[type="number"] {
   border-left: 1px solid var(--line);
 }
 
+.bar > [hidden] {
+  display: none;
+}
+
 .bar .speeds {
   gap: 2px;
   padding: 4px;

@@ -6,6 +6,7 @@ import { CORRIDOR_HALF_WIDTH } from "../game/data";
 import { cumulative } from "../game/geometry";
 import { DEPOT_LENGTH, DEPOT_WIDTH, platformWidth } from "../game/network";
 import { People } from "./people";
+import { Trees } from "./trees";
 
 const MAX_CARS = 30000;
 const EARTH_CIRCUMFERENCE = 40075016.686;
@@ -30,6 +31,8 @@ export class Scene3D implements CustomLayerInterface {
 
   private carMaterials: THREE.MeshLambertMaterial[] = [];
   private people: People;
+  private trees: Trees | null = null;
+  private treeTimer = 0;
 
   constructor(
     private game: Game,
@@ -70,6 +73,13 @@ export class Scene3D implements CustomLayerInterface {
     this.undergroundCars.frustumCulled = false;
     this.undergroundCars.renderOrder = 10;
     this.scene.add(this.surfaceCars, this.undergroundCars, this.structures, this.tunnels, this.people.mesh);
+    this.trees = new Trees(map, this.game, this.theme);
+    this.scene.add(this.trees.group);
+    map.on("moveend", () => this.queueTrees(false));
+    // Tiles finishing loading can bring parks that weren't there when the view stopped.
+    map.on("sourcedata", (e) => {
+      if (e.sourceId === "base" && e.isSourceLoaded) this.queueTrees(true);
+    });
     this.rebuild();
   }
 
@@ -81,10 +91,17 @@ export class Scene3D implements CustomLayerInterface {
       m.emissive.set(theme === "dark" ? 0x505050 : 0x111111);
     }
     this.people.setTheme(theme);
+    this.trees?.setTheme(theme);
     this.map?.triggerRepaint();
   }
 
+  private queueTrees(fresh: boolean) {
+    clearTimeout(this.treeTimer);
+    this.treeTimer = window.setTimeout(() => this.trees?.update(fresh), 250);
+  }
+
   setXray(on: boolean) {
+    if (this.trees) this.trees.group.visible = !on;
     this.xray = on;
     this.tunnels.visible = on;
     (this.undergroundCars.material as THREE.MeshLambertMaterial).depthTest = on;
@@ -94,6 +111,7 @@ export class Scene3D implements CustomLayerInterface {
   /** Rebuilds static geometry after the network changes. */
   rebuild() {
     if (!this.map) return;
+    this.queueTrees(false);
     for (const g of [this.structures, this.tunnels]) {
       for (const child of [...g.children]) {
         g.remove(child);
