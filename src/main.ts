@@ -66,18 +66,23 @@ async function boot() {
   try {
     screen.step(10, "Reading the city…");
     const city = await loadCity(cityId);
-    screen.step(35, `Loading ${city.manifest.totals.buildings.toLocaleString("en")} buildings…`);
-    const buildingsPromise = Buildings.load(cityUrl(cityId) + city.manifest.buildings).catch((err) => {
-      console.warn("buildings unavailable, demolition checks are off", err);
-      return null;
-    });
+    // Building outlines are large; play starts without them and they arrive in the background.
+    const buildingsPromise = Buildings.load(cityUrl(cityId) + city.manifest.buildings);
     const state = await pickState(city);
     if (state.cityId !== city.id) throw new Error(`This save is for ${state.cityId}, not ${city.id}.`);
+    screen.step(40, "Drawing the map…");
     const map = createMap(document.getElementById("map")!, city, settings.theme, settings.reducedMotion);
-    const [buildings] = await Promise.all([buildingsPromise, new Promise<void>((r) => map.once("load", () => r()))]);
+    await new Promise<void>((r) => map.once("load", () => r()));
     screen.step(80, "Starting the simulation…");
 
-    const game = new Game(state, city, buildings);
+    const game = new Game(state, city, null);
+    buildingsPromise.then(
+      (b) => game.setBuildings(b),
+      (err) => {
+        console.warn("buildings unavailable, demolition checks are off", err);
+        game.setBuildings(null);
+      },
+    );
     const scene = new Scene3D(game, settings.theme);
     const reload = (query: string) => {
       saves.autosave(game.state).finally(() => (location.search = query));

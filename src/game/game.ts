@@ -353,7 +353,17 @@ export class Game {
   }
 
   /** Starts construction of all planned work. */
+  /** Building outlines arrive after the game starts; until then nothing can be built. */
+  buildingsReady = false;
+
+  setBuildings(b: Buildings | null) {
+    this.net.buildings = b;
+    this.buildingsReady = true;
+    this.networkChanged();
+  }
+
   build(): string | null {
+    if (!this.buildingsReady) return "Still loading the city's buildings. Try again in a moment.";
     const cost = this.net.plannedCost();
     if (cost <= 0) return null;
     const problems = this.net.plannedProblems();

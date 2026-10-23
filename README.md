@@ -6,6 +6,8 @@ Cities are built from open data (OpenStreetMap and the GHSL population grid), so
 
 The game is early and changes a lot. See [DESIGN.md](DESIGN.md) for what we're building and why.
 
+Play it in your browser at https://broiler747tb.github.io/MakeMetro/. The first visit downloads about 60 MB of city data; after that the map loads as you move around.
+
 ## Running it
 
 You need Node 20 or newer.
