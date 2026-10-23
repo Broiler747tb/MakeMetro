@@ -89,7 +89,7 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
         setNetwork(msg.network);
         break;
       case "day": {
-        if (!net || !catch_ || !demand) return;
+        if (!net || !catch_ || !demand) throw new Error("day requested before the city and network arrived");
         const d = msg.day;
         const result = simulateDay(net, catch_, trips(d.kind, d.month), trips(d.previous, d.month), d, sat);
         if (msg.commit) result.routes.forEach((r, i) => (sat[i] = r.satisfaction));

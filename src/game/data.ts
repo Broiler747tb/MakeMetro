@@ -61,11 +61,13 @@ export const COSTS = {
 };
 
 // Construction pace in days.
+// Far quicker than real life (a real boring machine manages 10-25 m a day), so a line
+// opens within weeks of game time rather than years.
 export const BUILD_TIME = {
-  tbmMetresPerDay: 25,
-  daysPerKm: { cut: 120, elevated: 90, grade: 50 } as Record<Exclude<BuildKind, "bored">, number>,
-  station: { bored: 240, cut: 180, elevated: 120, grade: 60 } as Record<BuildKind, number>,
-  depot: 200,
+  tbmMetresPerDay: 125,
+  daysPerKm: { cut: 25, elevated: 18, grade: 10 } as Record<Exclude<BuildKind, "bored">, number>,
+  station: { bored: 30, cut: 20, elevated: 14, grade: 7 } as Record<BuildKind, number>,
+  depot: 20,
   startingTbms: 2,
   tbmCost: 25e6,
 };

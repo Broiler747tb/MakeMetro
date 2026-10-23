@@ -45,7 +45,7 @@ The core loop is: place stations, connect them with track, then place a depot an
 - **Cut-and-cover** follows streets. Crossing a block means demolishing it.
 - **Demolition** is required whenever track or a trench hits a building, or a tunnel passes through a foundation. Foundation depth is estimated from building height and shown on hover. Demolishing costs compensation and removes the building's residents and jobs from the map.
 - **Bored tunnels** need a tunnel boring machine. You own a few, and each digs at a set pace, so you have to choose what gets built first.
-- **Construction time:** everything takes game time unless the sandbox instant-build toggle is on.
+- **Construction time:** everything takes game time unless the sandbox instant-build toggle is on. The pace is far quicker than real life so a line opens within weeks: a boring machine digs 125 m a day, and a deep station takes 30 days.
 - **Planning mode:** blueprints can be drawn without paying. Undo and redo work everywhere.
 - **Stations:**
   - You set the platform length and pick an island or side layout. The layout affects width, cost and walking time.
@@ -99,7 +99,7 @@ The core loop is: place stations, connect them with track, then place a depot an
 ## Time and saves
 
 - **Calendar:** real dates, with weekdays and weekends.
-- **Speeds:** pause plus three speeds.
+- **Speeds:** pause plus three speeds: a minute, ten minutes and a whole day per second.
 - **Saves** are compressed JSON. The game autosaves every game week and on exit, and keeps a few rotating autosaves.
 
 ## Look and feel

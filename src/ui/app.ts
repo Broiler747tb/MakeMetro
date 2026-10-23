@@ -223,7 +223,7 @@ export class App {
   private buildBar() {
     const speeds = h("div", { class: "speeds" });
     const labels = [icons.pause, icons.play1, icons.play2, icons.play3];
-    const titles = ["Pause (Space)", "Normal speed (1)", "Fast (2)", "Fastest (3)"];
+    const titles = ["Pause (Space)", "Normal speed: a minute a second (1)", "Fast: ten minutes a second (2)", "Fastest: a day a second (3)"];
     labels.forEach((ic, i) => {
       const b = h("button", { title: titles[i], onclick: () => this.game.setSpeed(i) }, svg(ic));
       (b.firstChild as SVGElement).setAttribute("width", "16");

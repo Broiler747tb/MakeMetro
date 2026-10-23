@@ -6,7 +6,8 @@ import { Network } from "./network";
 import { compileRoute, makeTrip, tripEnd, trainsFor, type CompiledRoute, type Trip } from "./service";
 import type { DayKind, DayResult, DaySpec, FromWorker, SimNetwork, ToWorker } from "../sim/protocol";
 
-export const SPEEDS = [0, 60, 600, 14400];
+// Game seconds per real second. The top speed runs a whole day each second.
+export const SPEEDS = [0, 60, 600, 86400];
 export const DAY = 86400;
 const MAX_STEP = 6 * 3600; // never advance more than this in one frame
 const HISTORY_DAYS = 400;
@@ -155,6 +156,12 @@ export class Game {
         this.today = msg.result;
         if (this.pendingCommit === msg.seq) this.applySatisfaction(msg.result);
         this.applyDwell(msg.result);
+        this.dayBusy = false;
+        if (this.dayWaiting) {
+          const commit = this.dayWaiting.commit;
+          this.dayWaiting = null;
+          this.requestDay(commit);
+        }
         this.emit("day");
         break;
       case "travelTime":
@@ -163,13 +170,25 @@ export class Game {
         break;
       case "error":
         console.error("simulation:", msg.message);
+        this.dayBusy = false;
         break;
     }
   }
 
   private pendingCommit = -1;
+  private dayBusy = false;
+  private dayWaiting: { commit: boolean } | null = null;
 
+  /**
+   * Asks the worker to simulate today. At top speed days can come faster than a big network
+   * simulates, so while one is running only the latest request is kept, never a backlog.
+   */
   private requestDay(commit: boolean) {
+    if (this.dayBusy) {
+      this.dayWaiting = { commit: commit || (this.dayWaiting?.commit ?? false) };
+      return;
+    }
+    this.dayBusy = true;
     const seq = ++this.daySeq;
     if (commit) this.pendingCommit = seq;
     this.post({ type: "day", day: this.daySpec(), seq, commit });
