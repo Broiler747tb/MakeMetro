@@ -40,6 +40,8 @@ export interface CityManifest {
   totals: { residents: number; jobs: number; education: number; buildings: number; jobsIndustry?: number };
   attribution: string[];
   dem?: { tiles: string; encoding: "terrarium" | "mapbox"; minzoom: number; maxzoom: number };
+  /** Changes only when the data does; older packs only have `generated`. */
+  version?: string;
   generated?: string;
 }
 
@@ -94,7 +96,7 @@ export async function loadCity(id: string): Promise<City> {
   const manifest = await loadManifest(id, manifestUrl);
   if (manifest.format !== 1) throw new Error(`Unsupported city pack format ${manifest.format}`);
 
-  const store = await CityStore.open(id, manifest.generated ?? "1", baseUrl);
+  const store = await CityStore.open(id, manifest.version ?? manifest.generated ?? "1", baseUrl);
   await store.get("city.json");
   // A city saved on an earlier visit draws its map straight from disk.
   await store.restore(manifest.basemap);

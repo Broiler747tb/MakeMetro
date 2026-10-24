@@ -11,7 +11,7 @@ import { Grid, GRID_LAYERS } from "./grid";
 import { classifyBuildings, paintLand } from "./landuse";
 import { buildNames } from "./names";
 import { distributeNature } from "./nature";
-import { writeBuildings, writeGrid, writeJson, writeNames } from "./pack";
+import { contentVersion, writeBuildings, writeGrid, writeJson, writeNames } from "./pack";
 import { OUTPUT_DIR, ROOT } from "./paths";
 import { loadPopulation } from "./population";
 import { writePreview } from "./preview";
@@ -121,6 +121,7 @@ async function main() {
       nature: Math.round(grid.sum("nature")),
       nightlife: Math.round(grid.sum("nightlife")),
     };
+    const data = [basemapOut, writeGrid(outDir, grid), writeBuildings(outDir, buildings), writeNames(outDir, names)];
     const manifest = writeJson(outDir, "city.json", {
       format: 1,
       id: config.id,
@@ -146,18 +147,13 @@ async function main() {
       dem: { tiles: "dem/{z}/{x}/{y}.png", encoding: "terrarium", minzoom: 8, maxzoom: 12 },
       totals,
       attribution: ATTRIBUTION,
+      version: contentVersion(outDir, data),
       generated: new Date().toISOString(),
     });
     writePreview(cachePath(id, "residents-jobs.png"), grid, ["residents", "jobs"]);
     writePreview(cachePath(id, "industry-nature-nightlife.png"), grid, ["jobsIndustry", "nature", "nightlife"]);
     writePreview(cachePath(id, "layers.png"), grid, [...GRID_LAYERS], 1);
-    return [
-      manifest,
-      basemapOut,
-      writeGrid(outDir, grid),
-      writeBuildings(outDir, buildings),
-      writeNames(outDir, names),
-    ];
+    return [manifest, ...data];
   });
 
   const byKind = new Map<number, number>();

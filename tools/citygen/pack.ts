@@ -1,5 +1,6 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import type { Building } from "./buildings";
 import { GRID_LAYERS, type Grid } from "./grid";
 import type { NamePoint } from "./names";
@@ -71,6 +72,25 @@ export function writeNames(dir: string, names: NamePoint[]): string {
   const path = join(dir, "names.json");
   writeFileSync(path, JSON.stringify(names));
   return path;
+}
+
+/**
+ * A short hash of the pack's data files, terrain tiles included. The game keeps a city on disk
+ * under it, so players only download a city again when its data has changed.
+ */
+export function contentVersion(dir: string, files: string[]): string {
+  const demDir = join(dir, "dem");
+  const dem = existsSync(demDir) ? (readdirSync(demDir, { recursive: true }) as string[]).map((f) => join(demDir, f)) : [];
+  const names = [...files, ...dem]
+    .filter((f) => statSync(f).isFile())
+    .map((f) => relative(dir, f).replace(/\\/g, "/"))
+    .sort();
+  const hash = createHash("sha256");
+  for (const name of names) {
+    hash.update(name);
+    hash.update(readFileSync(join(dir, name)));
+  }
+  return hash.digest("hex").slice(0, 16);
 }
 
 export function writeJson(dir: string, file: string, value: unknown): string {
