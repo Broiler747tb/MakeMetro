@@ -6,6 +6,7 @@ import { CORRIDOR_HALF_WIDTH } from "../game/data";
 import { cumulative } from "../game/geometry";
 import { DEPOT_LENGTH, DEPOT_WIDTH, platformWidth } from "../game/network";
 import { People } from "./people";
+import { Shadows } from "./shadows";
 import { Trees } from "./trees";
 
 const MAX_CARS = 30000;
@@ -33,6 +34,16 @@ export class Scene3D implements CustomLayerInterface {
   private people: People;
   private trees: Trees | null = null;
   private treeTimer = 0;
+  private shadows: Shadows | null = null;
+  private shadowScene = new THREE.Scene();
+
+  /** Building shadows go under the buildings, so they get a map layer of their own. */
+  readonly shadowLayer: CustomLayerInterface = {
+    id: "mm-shadows",
+    type: "custom",
+    renderingMode: "2d",
+    render: (_gl, options) => this.renderShadows(options),
+  };
 
   constructor(
     private game: Game,
@@ -75,6 +86,8 @@ export class Scene3D implements CustomLayerInterface {
     this.scene.add(this.surfaceCars, this.undergroundCars, this.structures, this.tunnels, this.people.mesh);
     this.trees = new Trees(map, this.game, this.theme);
     this.scene.add(this.trees.group);
+    this.shadows = new Shadows(map, this.game, this.theme);
+    this.shadowScene.add(this.shadows.group);
     map.on("moveend", () => this.queueTrees(false));
     // Tiles finishing loading can bring parks that weren't there when the view stopped.
     map.on("sourcedata", (e) => {
@@ -92,6 +105,7 @@ export class Scene3D implements CustomLayerInterface {
     }
     this.people.setTheme(theme);
     this.trees?.setTheme(theme);
+    this.shadows?.setTheme(theme);
     this.map?.triggerRepaint();
   }
 
@@ -308,11 +322,24 @@ export class Scene3D implements CustomLayerInterface {
     // People only make sense close up; at the fastest speed they skip ahead and vanish.
     const zoom = this.map.getZoom();
     this.people.update(zoom >= 14, Math.max(1.6, this.metresPerPixel() * 3));
+    this.setCamera(options);
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  private renderShadows(options: CustomRenderMethodInput) {
+    if (!this.shadows || this.xray) return;
+    const building = this.shadows.frame();
+    this.setCamera(options);
+    this.renderer.resetState();
+    this.renderer.render(this.shadowScene, this.camera);
+    if (building) this.map.triggerRepaint();
+  }
+
+  private setCamera(options: CustomRenderMethodInput) {
     const mvp = new THREE.Matrix4().fromArray(options.defaultProjectionData.mainMatrix as unknown as number[]);
     this.camera.projectionMatrix = mvp.multiply(this.model);
     this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
-    this.renderer.resetState();
-    this.renderer.render(this.scene, this.camera);
   }
 
   onRemove() {

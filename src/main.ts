@@ -141,6 +141,7 @@ async function boot() {
       () => reload(`?city=${cityId}&new=1`),
     );
     map.addLayer(scene, LAYER_IDS.above3d);
+    map.addLayer(scene.shadowLayer, "buildings");
     const pad = new GamepadInput(app);
     screen.done();
     keepCity(city, game, app);

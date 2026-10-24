@@ -7,6 +7,7 @@ import type { PlatformLayout } from "../game/model";
 import { DEPOT_LENGTH } from "../game/network";
 import { classifyDistricts, DISTRICTS, DISTRICT_COLOURS, DISTRICT_NAMES } from "../sim/districts";
 import { applyTheme } from "../map/mapView";
+import { BUILDING_OPACITY } from "../map/style";
 import type { Scene3D } from "../render/scene3d";
 import { saveSettings, applySettings, keyOf, type Action, type Settings } from "../settings";
 import { h, svg } from "./dom";
@@ -342,7 +343,7 @@ export class App {
     this.scene.setXray(!this.scene.xray);
     const on = this.scene.xray;
     this.corner.querySelector('[data-role="xray"]')?.classList.toggle("on", on);
-    this.map.setPaintProperty("buildings", "fill-extrusion-opacity", on ? 0.12 : ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 0.9]);
+    this.map.setPaintProperty("buildings", "fill-extrusion-opacity", on ? 0.12 : BUILDING_OPACITY);
     if (on && this.map.getPitch() < 30) this.map.easeTo({ pitch: 55, duration: this.settings.reducedMotion ? 0 : 600 });
   }
 

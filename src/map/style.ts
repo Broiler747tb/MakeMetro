@@ -56,7 +56,7 @@ const palettes: Record<Theme, Palette> = {
     buildingMid: "#e2dfd9",
     buildingHigh: "#ece9e4",
     shadow: "#2e3340",
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.22,
     hillShadow: "#6f6857",
     hillHighlight: "#ffffff",
     boundary: "#c4c2bb",
@@ -87,7 +87,7 @@ const palettes: Record<Theme, Palette> = {
     buildingMid: "#32353b",
     buildingHigh: "#3d4048",
     shadow: "#000000",
-    shadowOpacity: 0.55,
+    shadowOpacity: 0.38,
     hillShadow: "#000000",
     hillHighlight: "#4a5262",
     boundary: "#383b41",
@@ -108,47 +108,13 @@ const FONT_MEDIUM = ["Noto Sans Medium"];
 // the other way. Shadows are cast from a lower, late-afternoon sun so they read at city scale.
 const SUN_AZIMUTH = 210;
 const SUN_FROM_ZENITH = 35;
-const SHADOW_SUN_FROM_ZENITH = 55;
-const SHADOW_DIR = [Math.sin(((SUN_AZIMUTH + 180) * Math.PI) / 180), -Math.cos(((SUN_AZIMUTH + 180) * Math.PI) / 180)];
-// MapLibre's world is 512 px wide at zoom 0.
-const METRES_PER_PIXEL_AT_Z0 = (40075016.686 / 512) * Math.cos((55.75 * Math.PI) / 180);
+export const SHADOW_SUN = { azimuth: SUN_AZIMUTH, fromZenith: 45 };
+// Solid, so the shadows drawn under the buildings never show through them.
+export const BUILDING_OPACITY: any = ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1];
 
 // The basemap stays quiet: no POIs, and no metro, light rail or tram, since the player
 // builds the network from scratch.
 const notUrbanRail: any = ["!", ["in", ["get", "kind_detail"], ["literal", ["subway", "light_rail", "tram", "monorail", "funicular"]]]];
-
-/** Footprints shifted away from the sun, one layer per height band, so taller blocks cast longer shadows. */
-function shadowLayers(c: Palette): LayerSpecification[] {
-  const bands: [number, number, number][] = [
-    [0, 15, 9],
-    [15, 40, 25],
-    [40, 100, 60],
-    [100, 1000, 150],
-  ];
-  const height: any = ["coalesce", ["get", "height"], 9];
-  return bands.map(([lo, hi, typical]) => {
-    const metres = typical * Math.tan((SHADOW_SUN_FROM_ZENITH * Math.PI) / 180);
-    const at = (z: number) => {
-      const px = (metres * 2 ** z) / METRES_PER_PIXEL_AT_Z0;
-      return [SHADOW_DIR[0] * px, SHADOW_DIR[1] * px];
-    };
-    return {
-      id: `building-shadow-${lo}`,
-      type: "fill",
-      source: SRC,
-      "source-layer": "buildings",
-      minzoom: 13,
-      filter: ["all", [">=", height, lo], ["<", height, hi]],
-      paint: {
-        "fill-color": c.shadow,
-        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, c.shadowOpacity],
-        "fill-translate": ["interpolate", ["exponential", 2], ["zoom"], 13, ["literal", at(13)], 20, ["literal", at(20)]],
-        "fill-translate-anchor": "map",
-        "fill-antialias": false,
-      },
-    } as LayerSpecification;
-  });
-}
 
 function layers(c: Palette, withDem: boolean): LayerSpecification[] {
   const name: any = ["coalesce", ["get", "name"], ["get", "name:en"]];
@@ -297,7 +263,6 @@ function layers(c: Palette, withDem: boolean): LayerSpecification[] {
       filter: ["<=", ["get", "kind_detail"], 4],
       paint: { "line-color": c.boundary, "line-width": 0.8, "line-dasharray": [4, 3] },
     },
-    ...shadowLayers(c),
     {
       id: "buildings",
       type: "fill-extrusion",
@@ -308,7 +273,7 @@ function layers(c: Palette, withDem: boolean): LayerSpecification[] {
         "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "height"], 9], 0, c.buildingLow, 40, c.buildingMid, 150, c.buildingHigh],
         "fill-extrusion-height": ["coalesce", ["get", "height"], 9],
         "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
-        "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 0.95],
+        "fill-extrusion-opacity": BUILDING_OPACITY,
         "fill-extrusion-vertical-gradient": true,
       },
     },
@@ -360,6 +325,11 @@ function layers(c: Palette, withDem: boolean): LayerSpecification[] {
 
 export function lightFor(theme: Theme): LightSpecification {
   return { anchor: "map", position: [1.15, SUN_AZIMUTH, SUN_FROM_ZENITH], color: "#ffffff", intensity: theme === "dark" ? 0.3 : 0.4 };
+}
+
+export function shadowFor(theme: Theme): { color: string; opacity: number } {
+  const c = palettes[theme];
+  return { color: c.shadow, opacity: c.shadowOpacity };
 }
 
 export function skyFor(theme: Theme): SkySpecification {
