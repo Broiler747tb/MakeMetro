@@ -6,7 +6,7 @@ import { CORRIDOR_HALF_WIDTH } from "../game/data";
 import { cumulative } from "../game/geometry";
 import { DEPOT_LENGTH, DEPOT_WIDTH, platformWidth } from "../game/network";
 import { People } from "./people";
-import { Shadows } from "./shadows";
+import { SHADOW_DEPTH_SPAN, Shadows } from "./shadows";
 import { Trees } from "./trees";
 
 const MAX_CARS = 30000;
@@ -29,6 +29,8 @@ export class Scene3D implements CustomLayerInterface {
   private structures = new THREE.Group();
   private tunnels = new THREE.Group();
   private tmp = new THREE.Object3D();
+  private ambient = new THREE.AmbientLight(0xffffff, 1.0);
+  private sun = new THREE.DirectionalLight(0xffffff, 1.7);
 
   private carMaterials: THREE.MeshLambertMaterial[] = [];
   private people: People;
@@ -42,7 +44,7 @@ export class Scene3D implements CustomLayerInterface {
     id: "mm-shadows",
     type: "custom",
     renderingMode: "2d",
-    render: (_gl, options) => this.renderShadows(options),
+    render: (gl, options) => this.renderShadows(gl, options),
   };
 
   constructor(
@@ -62,10 +64,9 @@ export class Scene3D implements CustomLayerInterface {
     const s = origin.meterInMercatorCoordinateUnits();
     this.model.makeTranslation(origin.x, origin.y, origin.z).scale(new THREE.Vector3(s, -s, s));
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-    sun.position.set(-0.5, -0.8, 1.5);
-    this.scene.add(sun);
+    // The same sun as the buildings and their shadows: south-south-west, 50 degrees up.
+    this.sun.position.set(-0.32, -0.56, 0.77);
+    this.scene.add(this.ambient, this.sun);
 
     // Trains are pale cars on top of the coloured line, so they read against it in either theme.
     const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0, 0.5);
@@ -96,9 +97,13 @@ export class Scene3D implements CustomLayerInterface {
     this.rebuild();
   }
 
-  /** Pale cars on the dark map, dark cars on the light one. */
+  /** Light for the theme, and pale cars on the dark map, dark cars on the light one. */
   setTheme(theme: "light" | "dark") {
     this.theme = theme;
+    // Barely warm daylight in the light theme, a cooler evening light in the dark one.
+    this.sun.color.set(theme === "dark" ? 0xe8edf5 : 0xfff4e6);
+    this.ambient.color.set(theme === "dark" ? 0xdfe4ec : 0xf2f4f7);
+    this.ambient.intensity = theme === "dark" ? 0.9 : 1.0;
     for (const m of this.carMaterials) {
       m.color.set(theme === "dark" ? 0xf4f4f2 : 0x26272b);
       m.emissive.set(theme === "dark" ? 0x505050 : 0x111111);
@@ -327,11 +332,18 @@ export class Scene3D implements CustomLayerInterface {
     this.renderer.render(this.scene, this.camera);
   }
 
-  private renderShadows(options: CustomRenderMethodInput) {
+  private renderShadows(gl: WebGLRenderingContext | WebGL2RenderingContext, options: CustomRenderMethodInput) {
     if (!this.shadows || this.xray) return;
     const building = this.shadows.frame();
     this.setCamera(options);
+    // MapLibre gives this layer a single depth. Open a thin slice in front of it, well short of the
+    // next layer up, for the shadow passes to sort overlapping shadows in.
+    const far = (gl.getParameter(gl.DEPTH_RANGE) as Float32Array)[1];
+    gl.depthRange(far - SHADOW_DEPTH_SPAN, far);
     this.renderer.resetState();
+    this.shadows.setPass("depth");
+    this.renderer.render(this.shadowScene, this.camera);
+    this.shadows.setPass("colour");
     this.renderer.render(this.shadowScene, this.camera);
     if (building) this.map.triggerRepaint();
   }

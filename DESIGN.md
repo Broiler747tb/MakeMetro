@@ -105,7 +105,11 @@ The core loop is: place stations, connect them with track, then place a depot an
 ## Look and feel
 
 - **Overall:** balanced and minimal, so the map stays the focus. Data overlays work like those in city builders.
-- **Map:** hill shading from the elevation data, buildings lit from the south-west with shadows that grow with their height, a hazy horizon when tilted, and trees in parks, woods and on lawns.
+- **Map:**
+  - The city reads through value, light and ground detail, not colour. The player's lines stay the only saturated thing on the map.
+  - Buildings sit a shade darker than the ground and lighten slightly with height. One sun from the south-south-west lights the buildings, trees and trains, and casts ground shadows that fade from the wall outward, with a soft contact band at each building's base.
+  - Landuse covers civic grounds, hospitals, cemeteries, pitches, squares and the rest, not only parks. Roads follow a real hierarchy and widen with the zoom, and footpaths are separate from streets.
+  - Hill shading picks out the river valleys and fades at street zooms, where the terrain data is too coarse to help. The horizon is hazy when tilted, and trees grow in parks, woods and on lawns.
 - **Overlays:** population and jobs, passenger flows, crowding, and a travel-time map from any point.
 - **Charts:** riders per hour, load and revenue for each line and station over the day.
 - **Alerts:** a quiet log. Only things that need action pop up.

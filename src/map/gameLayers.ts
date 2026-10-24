@@ -22,6 +22,9 @@ const ids = {
   handles: "mm-handles",
 };
 
+// Lines keep widening past z16, so they still read next to the wide avenues of a close-up view.
+const TRACK_WIDTH: any = ["interpolate", ["linear"], ["zoom"], 10, 1.5, 16, 4, 18, 7];
+
 export const LAYER_IDS = {
   trackHit: "mm-track-hit",
   stations: "mm-stations-circle",
@@ -133,14 +136,14 @@ export class GameLayers {
       source: ids.track,
       filter: ["==", ["get", "status"], "built"],
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": c.track, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 16, 4] },
+      paint: { "line-color": c.track, "line-width": TRACK_WIDTH },
     });
     map.addLayer({
       id: "mm-track-building",
       type: "line",
       source: ids.track,
       filter: ["==", ["get", "status"], "building"],
-      paint: { "line-color": c.track, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 16, 4], "line-dasharray": [2, 1] },
+      paint: { "line-color": c.track, "line-width": TRACK_WIDTH, "line-dasharray": [2, 1] },
     });
     map.addLayer({
       id: "mm-track-planned",
@@ -149,7 +152,7 @@ export class GameLayers {
       filter: ["==", ["get", "status"], "planned"],
       paint: {
         "line-color": ["case", ["get", "bad"], c.bad, c.trackPlanned],
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 16, 4],
+        "line-width": TRACK_WIDTH,
         "line-dasharray": [1, 1.5],
       },
     });
@@ -161,8 +164,8 @@ export class GameLayers {
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": ["get", "color"],
-        "line-width": ["interpolate", ["linear"], ["zoom"], 9, ["*", 2, ["get", "w"]], 16, ["*", 6, ["get", "w"]]],
-        "line-offset": ["interpolate", ["linear"], ["zoom"], 9, ["*", ["get", "off"], 2.4], 16, ["*", ["get", "off"], 6.5]],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 9, ["*", 2, ["get", "w"]], 16, ["*", 6, ["get", "w"]], 18, ["*", 10, ["get", "w"]]],
+        "line-offset": ["interpolate", ["linear"], ["zoom"], 9, ["*", ["get", "off"], 2.4], 16, ["*", ["get", "off"], 6.5], 18, ["*", ["get", "off"], 10.8]],
         "line-opacity": ["case", ["get", "running"], 1, 0.45],
       },
     });
@@ -171,7 +174,7 @@ export class GameLayers {
       type: "line",
       source: ids.highlight,
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": c.preview, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 12], "line-opacity": 0.18 },
+      paint: { "line-color": c.preview, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 16, 12, 18, 20], "line-opacity": 0.18 },
     });
     map.addLayer({
       id: "mm-preview-fill",
