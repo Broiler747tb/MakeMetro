@@ -18,6 +18,15 @@ export interface SimRoute {
   doors: number;
   headways: { weekday: number[]; weekend: number[] };
   satisfaction: number;
+  fare?: number; // the route's own boarding fare, in place of the network's
+}
+
+export interface SimFares {
+  mode: "flat" | "distance" | "zones";
+  base: number; // charged by every route boarded, unless it has its own fare
+  perKm: number; // distance mode, per km ridden
+  zoneWidth: number;
+  perZone: number; // zones mode, per ring crossed
 }
 
 export interface SimNetwork {
@@ -25,7 +34,8 @@ export interface SimNetwork {
   routes: SimRoute[];
   periods: number[]; // start minute of each period
   walkRange: number;
-  fares: { mode: "flat" | "distance" | "zones"; base: number; perKm: number; zoneWidth: number; perZone: number };
+  centre: [number, number]; // zone rings are counted from here
+  fares: SimFares;
   removed: { x: number; y: number; residents: number; jobs: number }[]; // demolished buildings
 }
 
@@ -66,6 +76,7 @@ export interface RouteDayStats {
   // Flow per hour on each link: [dir 0 links..., dir 1 links...] x 24
   linkFlow: Float32Array;
   dwell: Float32Array; // seconds per stop at the busiest hour, dir 0 then dir 1
+  fares: number; // what riders paid this route today
 }
 
 export interface StationDayStats {
@@ -90,10 +101,13 @@ export type ToWorker =
   | { type: "init"; grid: GridData }
   | { type: "network"; network: SimNetwork }
   | { type: "day"; day: DaySpec; seq: number; commit: boolean } // commit: keep the satisfaction update
-  | { type: "travelTime"; x: number; y: number; hour: number; day: DaySpec; seq: number };
+  | { type: "travelTime"; x: number; y: number; hour: number; day: DaySpec; seq: number }
+  // A day with other fares, for a preview; routeFares maps route id to its own fare or null for the network's.
+  | { type: "forecast"; fares: SimFares; routeFares: Record<number, number | null>; day: DaySpec; seq: number };
 
 export type FromWorker =
   | { type: "ready" }
   | { type: "day"; seq: number; result: DayResult }
   | { type: "travelTime"; seq: number; minutes: Float32Array; cols: number; rows: number; x0: number; y0: number; cellSize: number }
+  | { type: "forecast"; seq: number; trips: number; fares: number; routes: { id: number; riders: number; fares: number }[] }
   | { type: "error"; message: string };

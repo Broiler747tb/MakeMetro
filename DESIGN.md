@@ -82,18 +82,25 @@ The core loop is: place stations, connect them with track, then place a depot an
   - **Nights out:** Saturday and Sunday evenings bring people into the centre for clubs, bars and theatres, and they head home after midnight. Winter keeps a few more people in town.
 - **Round trips:** a trip only happens by metro if the way back does too. If the metro is closed when people would come home, they don't go out by metro at all, so late weekend trains pay off.
 - **Out-of-map commuters:** people who live outside the map are ignored.
-- **Who rides:** someone takes the metro if there is a station within walking range at both ends and the metro beats walking the whole way. The walking range can be set per city, and willingness to walk tapers off with distance.
+- **Who rides:** someone can take the metro if there is a station within walking range at both ends. The walking range can be set per city, and willingness to walk tapers off with distance. Whether they do depends on mode choice, below.
 - **Transfers** cost walking and waiting time.
 - **Satisfaction** is a percentage. Crowding, long waits and slow trips lower it, and fewer of the possible riders use the route. At least about 30% keep riding however bad the service gets.
-- **Mode choice:** cars and other transit are not modelled in v1.
+- **Mode choice:** each trip picks between the metro, walking the whole way and "other ways", which stand in for cars, buses and trams without modelling them. The metro's side counts walking to and from the stations, waiting, riding, transfers and the fare, which is worth about three minutes per dollar. Doubling the fare loses about a fifth of riders, more on short trips.
+- **Pull of the metro:** places that are easy to reach by metro draw more trips, at the expense of places that are not, so a good network grows its own ridership. The number of trips people make stays the same.
 
 ## Money
 
 - **Currency and costs:** one game currency and one global cost table, kept in data files so mods can change them.
-- **City budget:** the city gives you a yearly budget, which grows when the network does well and turns a profit.
-- **Loans** are available, with interest.
-- **Fares** are flat by default. Distance and zone fares are options.
-- **Running costs:** train hours, car hours, track maintenance and station maintenance.
+- **What pays:** fares on a busy line cover its running costs and make a profit. Building and new trains need the city budget and loans.
+- **City budget:** paid each 1 January. It starts from the city's usual budget and adds up to half again for a profitable year with satisfied riders; it does not compound from year to year.
+- **Loans** are available, with interest charged as you go.
+- **Fares:**
+  - A network fare, flat by default, with distance and zone fares as options. Zones are rings around the city centre.
+  - Lines on the network fare share one ticket, so transfers between them are free. A line can charge its own fare instead, and everyone who boards it pays that fare.
+  - Changing a fare shows a forecast of riders and fare income first, and applies when you confirm.
+  - Riders mind dear fares a little: a big rise lowers the satisfaction that sets next year's budget, and a cut helps a little.
+- **Running costs:** train hours, car hours, track maintenance and station maintenance, charged by the hour.
+- **Economy panel:** a side panel that stays open while you play. It shows money, fares and costs for today, yesterday and the last 30 days, the fare settings, charts of money, profit and riders, the budget and loans. The bottom bar shows today's operating profit and fare income per hour.
 - **Running out of money** ends the game when money is enabled.
 
 ## Time and saves
@@ -118,6 +125,7 @@ The core loop is: place stations, connect them with track, then place a depot an
   - An x-ray toggle fades the ground and buildings so tunnels and stations show at their real depth.
   - Trains are simple car models in their line colour.
 - **Line colours:** you pick them when you create a line.
+- **Line names:** each line has a number and a name. New lines are named in the Moscow way after a place they serve, such as Сокольническая or Кольцевая, and the name follows the stops until you type your own. Other naming styles can come with other cities.
 
 ## Controls and accessibility
 
@@ -152,10 +160,10 @@ Milestone 1 is playable in a browser on Moscow. Done so far:
   - Gradient, curve, water, overlap and same-level crossing checks.
   - Demolition by corridor, platform footprint, depot yard and foundation depth.
   - Boring machines, construction time and planning mode with undo.
-- **Stations and routes:** platform length and layout, auto names, draggable entrances, train types and car counts, and per-period weekday and weekend headways.
+- **Stations and routes:** platform length and layout, auto names for stations and lines, line numbers, draggable entrances, train types and car counts, and per-period weekday and weekend headways.
 - **Operations:** track capacity limits, including single track; trains running on physics-based timings with load-dependent dwell, stopping centred on their platforms.
-- **People:** districts; office and factory commutes with shifts; school, shopping, outings and nights out by day of week and month; returns after midnight; routing with transfers; crowding and people left behind; satisfaction with its 30% floor.
-- **Money:** city budget growing with performance, loans, flat, distance and zone fares, running costs and game over.
+- **People:** districts; office and factory commutes with shifts; school, shopping, outings and nights out by day of week and month; returns after midnight; routing with transfers; mode choice against walking and other ways; the pull of the metro; crowding and people left behind; satisfaction with its 30% floor.
+- **Money:** the economy panel; network fares (flat, distance and zones) with per-line fares and a forecast; city budget, loans, running costs and game over.
 - **Saves:** compressed JSON in the browser, rotating autosaves, and file export and import.
 - **Controls:** keyboard shortcuts you can rebind, basic gamepad, UI scaling, reduced motion and colour-blind line colours.
 
@@ -169,4 +177,4 @@ Not done yet:
 - The Tauri desktop build
 - Tutorial, sound
 
-Balance notes: a lone line only serves trips with both ends in walking range of its stations, so early lines carry far fewer people than real Moscow lines, which are fed by buses and by each other. Ridership grows much faster than linearly as the network grows. Outings to nature are tapered beyond about 20 km from the centre, because the forests at the edge of the map otherwise outweigh the city's own parks. We should tune all of this once there are a few lines to compare.
+Balance notes: a lone line only serves trips with both ends in walking range of its stations. Real Moscow lines are also fed by buses and trams from further out, so trip rates are doubled to make up for it. With that, a lone central line carries about 100 to 150 thousand people a weekday and a nine-line network nearly 5 million, and at a $2 fare a busy central line earns more than its running costs and upkeep. Crossing lines feed each other and earn much more. Ridership grows much faster than linearly as the network grows. Outings to nature are tapered beyond about 20 km from the centre, because the forests at the edge of the map otherwise outweigh the city's own parks. We should tune all of this once there are a few lines to compare.

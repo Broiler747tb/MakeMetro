@@ -306,6 +306,27 @@ input[type="range"] {
   border-color: var(--text);
 }
 
+.badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 1.55em;
+  height: 1.55em;
+  padding: 0 0.3em;
+  border-radius: 0.78em;
+  font: 600 0.82em / 1 var(--mono);
+}
+
+.inline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.forecast {
+  margin-top: 6px;
+}
+
 .chip {
   display: inline-block;
   width: 12px;
@@ -528,6 +549,97 @@ table.grid input[type="number"] {
   justify-content: space-between;
   font-size: 0.85em;
   color: var(--muted);
+}
+
+/* ---- economy ---- */
+
+.economy {
+  position: absolute;
+  right: 12px;
+  top: calc(12px + 44px * var(--scale) + 6px);
+  width: calc(330px * var(--scale));
+  max-height: calc(100% - 44px * var(--scale) - 30px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  z-index: 2;
+}
+
+.economy h2 {
+  font-size: 1.08em;
+  font-weight: 600;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+}
+
+.economy h2 .grow {
+  flex: 1;
+}
+
+.economy h3 {
+  font-size: 0.82em;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 16px 0 6px;
+}
+
+.economy button.close {
+  border-color: transparent;
+  font-size: 1.2em;
+  line-height: 1;
+  padding: 0.1em 0.4em;
+}
+
+.economy .big {
+  font-size: 1.15em;
+  font-weight: 500;
+}
+
+.economy .chart-title {
+  min-height: 20px;
+  margin-top: 6px;
+}
+
+table.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+table.ledger th {
+  font-weight: 400;
+  text-align: left;
+  padding: 2px 0;
+}
+
+table.ledger tr:first-child th {
+  color: var(--muted);
+  font-size: 0.85em;
+  text-align: right;
+}
+
+table.ledger td {
+  text-align: right;
+  padding: 2px 0 2px 8px;
+  white-space: nowrap;
+}
+
+table.ledger tr.total th,
+table.ledger tr.total td {
+  border-top: 1px solid var(--line);
+  font-weight: 500;
+  padding-top: 4px;
+}
+
+table.ledger tr.gap td {
+  height: 8px;
+}
+
+.economy:not([hidden]) ~ .legend,
+.economy:not([hidden]) ~ .log {
+  right: calc(12px + 330px * var(--scale) + 8px);
 }
 
 /* ---- log and toasts ---- */

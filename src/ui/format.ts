@@ -9,6 +9,11 @@ export function money(v: number): string {
   return `${sign}$${a.toFixed(0)}`;
 }
 
+/** A fare, to the cent. */
+export function fare(v: number): string {
+  return `$${v.toFixed(2)}`;
+}
+
 export function count(v: number): string {
   if (v >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
   if (v >= 1e4) return `${(v / 1e3).toFixed(0)}k`;

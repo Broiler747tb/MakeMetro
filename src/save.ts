@@ -1,5 +1,5 @@
 import { gzipSync, gunzipSync, strFromU8, strToU8 } from "fflate";
-import type { GameState } from "./game/model";
+import type { DayRecord, GameState } from "./game/model";
 
 const DB = "makemetro";
 const STORE = "saves";
@@ -58,6 +58,21 @@ function migrate(s: GameState): GameState {
   s.units ??= "metric";
   s.fares ??= { mode: "flat", perKm: 0.1, zoneWidth: 8000, perZone: 0.5 };
   s.weekendHours ??= { open: 6 * 60, close: 26 * 60 };
+  s.lineFares ??= {};
+  // Line numbers and automatic names came later; names the game gave out then were "Line N".
+  s.routes.forEach((r, i) => {
+    r.number ??= i + 1;
+    if (r.autoName === undefined) {
+      r.autoName = /^Line \d+$/.test(r.name);
+      if (r.autoName) r.name = "";
+    }
+  });
+  // Older days kept only fares and one lump of costs.
+  for (const d of s.history) {
+    const old = d as Partial<DayRecord> & { revenue?: number; operating?: number };
+    if (d.fares !== undefined) continue;
+    Object.assign(d, { fares: old.revenue ?? 0, running: old.operating ?? 0, upkeep: 0, interest: 0, construction: 0, trains: 0, budget: 0, loans: 0 });
+  }
   return s;
 }
 

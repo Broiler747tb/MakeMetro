@@ -5,12 +5,24 @@ import type { Depot, Route, Station, TrackEdge } from "../game/model";
 import { trainsFor } from "../game/service";
 import { satisfactionShare } from "../sim/assign";
 import { h, hourChart, row, seg } from "./dom";
+import { lineFare } from "./fares";
 import * as fmt from "./format";
 
 const KIND_NAMES: Record<BuildKind, string> = { bored: "Bored tunnel", cut: "Cut-and-cover", elevated: "Elevated", grade: "At grade" };
 const SHORT_KIND: Record<BuildKind, string> = { bored: "Bored", cut: "Cut & cover", elevated: "Elevated", grade: "Surface" };
 const STATION_KIND: Record<BuildKind, string> = { bored: "Deep", cut: "Shallow", elevated: "Elevated", grade: "Surface" };
 const STATUS_NAMES = { planned: "Planned", building: "Under construction", built: "Open" };
+
+/** The line's number on its colour, like the roundels on a metro map. */
+function lineBadge(r: Route): HTMLElement {
+  const [cr, cg, cb] = [1, 3, 5].map((i) => parseInt(r.color.slice(i, i + 2), 16) / 255);
+  const light = 0.2126 * cr + 0.7152 * cg + 0.0722 * cb > 0.6;
+  return h("span", { class: "badge", style: { background: r.color, color: light ? "#1d1e20" : "#ffffff" } }, String(r.number));
+}
+
+function lineName(r: Route): string {
+  return r.name || `Line ${r.number}`;
+}
 
 export function renderPanel(app: App): Node[] {
   const g = app.game;
@@ -337,8 +349,8 @@ function stationPanel(app: App, st: Station): Node[] {
                 app.setActiveRoute(r.id);
               },
             },
-            h("span", { class: "chip", style: { background: r.color } }),
-            h("span", { class: "grow" }, r.name),
+            lineBadge(r),
+            h("span", { class: "grow" }, lineName(r)),
           ),
         ),
       ),
@@ -534,8 +546,8 @@ function routesPanel(app: App): Node[] {
           return h(
             "div",
             { class: "clickable", onclick: () => app.setActiveRoute(x.id) },
-            h("span", { class: "chip", style: { background: x.color } }),
-            h("span", { class: "grow" }, x.name),
+            lineBadge(x),
+            h("span", { class: "grow" }, lineName(x)),
             h("span", { class: why ? "muted" : "num" }, why ? "not running" : `${fmt.count(riders)}/day`),
           );
         }),
@@ -582,17 +594,23 @@ function routeEditor(app: App, r: Route): Node[] {
     h(
       "h2",
       null,
-      h("span", { class: "chip", style: { background: r.color } }),
+      lineBadge(r),
       h("input", {
         type: "text",
         value: r.name,
+        placeholder: `Line ${r.number}`,
         style: { flex: "1", fontWeight: "600" },
         onchange: (e: Event) => {
           const v = (e.target as HTMLInputElement).value.trim();
-          if (v) g.edit(() => (r.name = v));
+          // Clearing the name hands it back to the stops.
+          g.edit(() => {
+            r.autoName = !v;
+            if (v) r.name = v;
+          });
         },
       }),
     ),
+    r.autoName ? h("p", { class: "hint", style: { marginTop: "0" } }, "Named after a place it serves, and follows its stops. Type a name to keep your own.") : null,
   );
   const palette = app.settings.safeColours ? LINE_COLOURS_SAFE : LINE_COLOURS;
   out.push(
@@ -709,6 +727,8 @@ function routeEditor(app: App, r: Route): Node[] {
     );
   }
 
+  out.push(h("h3", null, "Fare"), ...lineFare(app, r));
+
   const s = g.today?.routes.find((x) => x.id === r.id);
   if (s && c) {
     const riders = s.boardings.reduce((a, b) => a + b, 0);
@@ -718,6 +738,7 @@ function routeEditor(app: App, r: Route): Node[] {
     out.push(
       h("h3", null, "Today"),
       row("Boardings", h("span", { class: "num" }, fmt.count(riders))),
+      row("Fares", h("span", { class: "num" }, fmt.money(s.fares))),
       row("Satisfaction", h("span", { class: "num" }, fmt.pct(sat))),
       row("Possible riders using it", h("span", { class: "num" }, fmt.pct(satisfactionShare(sat)))),
       row("Busiest load", h("span", { class: `num ${peak > 1 ? "bad" : peak > 0.85 ? "warn" : ""}` }, fmt.pct(peak))),

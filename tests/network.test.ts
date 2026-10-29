@@ -23,7 +23,7 @@ function flatCity(): City {
 function emptyState(): GameState {
   return {
     format: 2, cityId: "flat", startDate: "2026-01-05", time: 0, money: 0, yearBudget: 0, loans: [],
-    sandbox: { unlimitedMoney: true, instantBuild: true }, fare: 2, fares: { mode: "flat", perKm: 0, zoneWidth: 8000, perZone: 0 },
+    sandbox: { unlimitedMoney: true, instantBuild: true }, fare: 2, fares: { mode: "flat", perKm: 0, zoneWidth: 8000, perZone: 0 }, lineFares: {},
     periods: [], serviceHours: { open: 0, close: 1440 }, weekendHours: { open: 0, close: 1440 }, units: "metric", walkRange: 1000,
     nodes: [], edges: [], stations: [], depots: [], routes: [], demolished: [], tbms: 2,
     satisfaction: {}, fleet: {}, history: [], nextId: 1, gameOver: false,
@@ -35,7 +35,7 @@ const station = (net: Network, id: number): Target => {
   const st = net.stations.get(id)!;
   return { type: "station", station: id, x: st.x, y: st.y };
 };
-const route = (stops: number[]): Route => ({ id: 1, name: "", color: "", stops, trainType: "standard", cars: 6, headways: { weekday: [], weekend: [] } });
+const route = (stops: number[]): Route => ({ id: 1, number: 1, name: "", autoName: false, color: "", stops, trainType: "standard", cars: 6, headways: { weekday: [], weekend: [] } });
 
 test("a station is a straight platform with a port at each end", () => {
   const net = new Network(emptyState(), flatCity(), null);

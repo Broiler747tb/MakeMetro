@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { buildGraph, linkOffsets, periodOf, shortestFrom, simulateDay } from "./assign";
+import { buildGraph, linkOffsets, metroReach, periodOf, shortestFrom, simulateDay } from "./assign";
 import { Demand, accessSeconds, catchments, stationTrips, walkSeconds, willingness, type Catchments } from "./demand";
 import type { DayKind, DaySpec, FromWorker, SimNetwork, ToWorker } from "./protocol";
 
@@ -8,6 +8,7 @@ declare const self: DedicatedWorkerGlobalScope;
 let demand: Demand | null = null;
 let net: SimNetwork | null = null;
 let catch_: Catchments | null = null;
+let reach: Float32Array | undefined;
 const tripsCache = new Map<string, Float32Array[]>();
 let sat = new Float32Array(0);
 let removedKey = "";
@@ -25,6 +26,7 @@ function setNetwork(n: SimNetwork) {
     removedKey = key;
   }
   catch_ = catchments(demand, n);
+  reach = metroReach(n, catch_);
   tripsCache.clear();
   sat = new Float32Array(n.routes.map((r) => r.satisfaction));
 }
@@ -33,7 +35,7 @@ function trips(kind: DayKind, month: number): Float32Array[] {
   const key = `${kind}:${month}`;
   let t = tripsCache.get(key);
   if (!t) {
-    t = stationTrips(demand!, net!, catch_!, kind, month);
+    t = stationTrips(demand!, net!, catch_!, kind, month, reach);
     tripsCache.set(key, t);
   }
   return t;
@@ -46,7 +48,7 @@ function travelTime(x: number, y: number, hour: number, day: DaySpec) {
   const out = new Float32Array(g.cols * g.rows);
   const atStation = new Float32Array(S).fill(Infinity);
   if (S > 0 && day.service[hour]) {
-    const graph = buildGraph(n, day.kind !== "weekday", periodOf(n.periods, hour * 60 + 30), linkOffsets(n));
+    const graph = buildGraph(n, day.kind !== "weekday", periodOf(n.periods, hour * 60 + 30), linkOffsets(n), 0);
     // Walk to every station in range of the start, then ride.
     for (let s = 0; s < S; s++) {
       const st = n.stations[s];
@@ -54,7 +56,7 @@ function travelTime(x: number, y: number, hour: number, day: DaySpec) {
       if (willingness(d, n.walkRange * 1.5) <= 0) continue;
       const start = walkSeconds(d) + accessSeconds(st.level);
       const tree = shortestFrom(graph, s);
-      for (let t = 0; t < S; t++) atStation[t] = Math.min(atStation[t], start + tree.dist[t] + accessSeconds(n.stations[t].level));
+      for (let t = 0; t < S; t++) atStation[t] = Math.min(atStation[t], start + Math.min(tree.dist[t], tree.dist[S + t]) + accessSeconds(n.stations[t].level));
     }
   }
   const range = n.walkRange * 1.5;
@@ -94,6 +96,26 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
         const result = simulateDay(net, catch_, trips(d.kind, d.month), trips(d.previous, d.month), d, sat);
         if (msg.commit) result.routes.forEach((r, i) => (sat[i] = r.satisfaction));
         post({ type: "day", seq: msg.seq, result });
+        break;
+      }
+      case "forecast": {
+        if (!net || !catch_ || !demand) return;
+        const d = msg.day;
+        const n = net;
+        // Where people go doesn't depend on fares, so the day's trips stand; only who rides changes.
+        const priced: SimNetwork = {
+          ...n,
+          fares: msg.fares,
+          routes: n.routes.map((r) => ({ ...r, fare: r.id in msg.routeFares ? (msg.routeFares[r.id] ?? undefined) : r.fare })),
+        };
+        const result = simulateDay(priced, catch_, trips(d.kind, d.month), trips(d.previous, d.month), d, sat.slice());
+        post({
+          type: "forecast",
+          seq: msg.seq,
+          trips: result.trips,
+          fares: result.revenue.reduce((a, b) => a + b, 0),
+          routes: result.routes.map((r) => ({ id: r.id, riders: r.boardings.reduce((a, b) => a + b, 0), fares: r.fares })),
+        });
         break;
       }
       case "travelTime": {

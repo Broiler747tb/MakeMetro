@@ -13,6 +13,7 @@ export const icons = {
   undo: wrap('<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/>'),
   redo: wrap('<path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/>'),
   layers: wrap('<path d="M12 4l9 5-9 5-9-5z"/><path d="M3 14l9 5 9-5"/>'),
+  economy: wrap('<ellipse cx="12" cy="6.5" rx="7" ry="2.5"/><path d="M5 6.5v5.5c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6.5"/><path d="M5 12v5.5c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V12"/>'),
   xray: wrap('<path d="M3 9h18M3 9l3 11h12l3-11"/><path d="M8 14h8" stroke-dasharray="2 2"/>'),
   theme: wrap('<circle cx="12" cy="12" r="8"/><path d="M12 4v16a8 8 0 000-16z" fill="currentColor"/>'),
   menu: wrap('<path d="M4 7h16M4 12h16M4 17h16"/>'),

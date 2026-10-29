@@ -1,23 +1,45 @@
 import { MIN_HEADWAY, TRANSFER_LINK_DISTANCE } from "../game/data";
 import type { Catchments } from "./demand";
 import { PURPOSES, curves, walkSeconds } from "./demand";
-import type { DayResult, DaySpec, RouteDayStats, SimNetwork, StationDayStats } from "./protocol";
+import type { DayResult, DaySpec, RouteDayStats, SimNetwork, SimStation, StationDayStats } from "./protocol";
 
 const BOARD_PENALTY = 90; // s, how much a boarding "feels" beyond the wait
 const BASE_DWELL = 25;
 const PASSENGERS_PER_DOOR_SECOND = 1.2;
 const MAX_WAIT = 900;
-const SECONDS_PER_FARE_UNIT = 180; // people value an hour of their time at about twenty fare units
+export const SECONDS_PER_FARE_UNIT = 180; // people value an hour of their time at about twenty fare units
 
-export function fareBetween(net: SimNetwork, a: { x: number; y: number }, b: { x: number; y: number }): number {
+// The other ways to make a trip: buses, trams, cars and taxis, none of which the game
+// models in detail. They take a while to get going and crawl through traffic, but they
+// cost the same whatever the metro charges.
+const OTHER_START = 600; // s to reach a stop or the car, wait, and park at the other end
+const OTHER_SPEED = 4.5; // m/s along the roads, in traffic
+const ROAD_DETOUR = 1.3;
+const MODE_SCALE = 700; // s; how sharply people go for the quicker way
+
+/** Share of travellers between two places who take the metro rather than walking or going some other way. */
+export function metroShare(metroSeconds: number, dist: number): number {
+  const other = OTHER_START + (dist * ROAD_DETOUR) / OTHER_SPEED;
+  const walk = walkSeconds(dist);
+  return 1 / (1 + Math.exp((metroSeconds - other) / MODE_SCALE) + Math.exp((metroSeconds - walk) / MODE_SCALE));
+}
+
+/** Ring around the city centre, for zone fares. */
+function zoneOf(net: SimNetwork, p: SimStation): number {
+  return Math.floor(Math.hypot(p.x - net.centre[0], p.y - net.centre[1]) / net.fares.zoneWidth);
+}
+
+/** What boarding a route costs before distance or zone charges: its own fare, or the network's. */
+export function boardingFare(net: SimNetwork, r: number): number {
+  return net.routes[r].fare ?? net.fares.base;
+}
+
+/** What riding one leg adds to the fare: by its length, or by the rings it crosses. */
+export function legFare(net: SimNetwork, a: SimStation | undefined, b: SimStation | undefined, length: number): number {
   const f = net.fares;
-  if (f.mode === "distance") return f.base + (f.perKm * Math.hypot(a.x - b.x, a.y - b.y)) / 1000;
-  if (f.mode === "zones") {
-    const za = Math.floor(Math.hypot(a.x, a.y) / f.zoneWidth);
-    const zb = Math.floor(Math.hypot(b.x, b.y) / f.zoneWidth);
-    return f.base + f.perZone * Math.abs(za - zb);
-  }
-  return f.base;
+  if (f.mode === "distance") return (f.perKm * length) / 1000;
+  if (f.mode === "zones" && a && b) return f.perZone * Math.abs(zoneOf(net, a) - zoneOf(net, b));
+  return 0;
 }
 
 // Edge kinds in the routing graph.
@@ -26,21 +48,30 @@ const RIDE = 1;
 const ALIGHT = 2;
 const WALK = 3;
 
+// Fares: routes on the network fare share one ticket, paid when boarding the first of them;
+// a route with its own fare charges it every time someone boards. So the graph keeps each
+// station twice, before and after the network fare is paid (nodes s and S + s).
 interface Graph {
-  n: number; // station nodes first, then one node per route/direction/stop
+  n: number; // stations twice, then one node per route/direction/stop (twice for routes with their own fare)
+  S: number;
   head: Int32Array;
   next: Int32Array;
   to: Int32Array;
-  cost: Float32Array;
+  cost: Float32Array; // generalised seconds, fares included
+  fare: Float32Array; // what the edge charges: a boarding fare, or a leg's distance or zone charge
   kind: Uint8Array;
   // For RIDE edges: index into linkFlow; for BOARD: route index; for WALK: -1.
   ref: Int32Array;
-  rsBase: Int32Array[]; // [route][dir] -> first node id
 }
 
 export interface Tree {
-  dist: Float32Array; // generalised seconds to each station
+  dist: Float32Array; // generalised seconds to each node
   pred: Int32Array; // edge id into each node
+}
+
+/** The node a journey to station t ends at: whichever of its two copies is cheaper to reach. */
+export function arrival(g: Graph, tree: Tree, t: number): number {
+  return tree.dist[g.S + t] < tree.dist[t] ? g.S + t : t;
 }
 
 function hourMinute(h: number): number {
@@ -65,38 +96,44 @@ export function linkOffsets(net: SimNetwork): Int32Array {
   return off;
 }
 
-export function buildGraph(net: SimNetwork, weekend: boolean, period: number, links: Int32Array): Graph {
+/** The routing graph for one period. fareWeight turns fares into seconds; 0 routes by time alone. */
+export function buildGraph(net: SimNetwork, weekend: boolean, period: number, links: Int32Array, fareWeight = SECONDS_PER_FARE_UNIT): Graph {
   const S = net.stations.length;
   const index = new Map(net.stations.map((s, i) => [s.id, i]));
-  let n = S;
-  const rsBase: Int32Array[] = [];
-  for (const r of net.routes) {
-    const base = new Int32Array(2);
-    base[0] = n;
-    n += r.stops.length;
-    base[1] = n;
-    n += r.stops.length;
-    rsBase.push(base);
-  }
-  const edges: [number, number, number, number, number][] = [];
+  let n = 2 * S;
+  const edges: [number, number, number, number, number, number][] = [];
   for (let ri = 0; ri < net.routes.length; ri++) {
     const r = net.routes[ri];
     const hw = headwayAt(net, ri, weekend, period);
     if (hw <= 0 || r.stops.length < 2) continue;
     const wait = Math.min(MAX_WAIT, hw / 2);
     const m = r.stops.length;
-    for (let d = 0; d < 2; d++) {
-      for (let k = 0; k < m; k++) {
-        const stopIdx = d === 0 ? k : m - 1 - k;
-        const st = index.get(r.stops[stopIdx]);
-        if (st === undefined) continue;
-        const node = rsBase[ri][d] + k;
-        if (k < m - 1) {
-          edges.push([st, node, wait + BOARD_PENALTY, BOARD, ri]);
-          const leg = d === 0 ? k : m - 2 - k;
-          edges.push([node, node + 1, r.runTimes[leg] + BASE_DWELL, RIDE, links[ri] + d * (m - 1) + k]);
+    const own = r.fare !== undefined;
+    const board = boardingFare(net, ri);
+    // A network-fare route only exists after paying: boarding it from outside pays, from inside is free.
+    // A route with its own fare keeps whichever side the rider was on.
+    for (const layer of own ? [0, 1] : [1]) {
+      for (let d = 0; d < 2; d++) {
+        const first = n;
+        n += m;
+        for (let k = 0; k < m; k++) {
+          const stopIdx = d === 0 ? k : m - 1 - k;
+          const st = index.get(r.stops[stopIdx]);
+          if (st === undefined) continue;
+          const node = first + k;
+          if (k < m - 1) {
+            if (own) edges.push([layer * S + st, node, wait + BOARD_PENALTY + board * fareWeight, BOARD, ri, board]);
+            else {
+              edges.push([st, node, wait + BOARD_PENALTY + board * fareWeight, BOARD, ri, board]);
+              edges.push([S + st, node, wait + BOARD_PENALTY, BOARD, ri, 0]);
+            }
+            const leg = d === 0 ? k : m - 2 - k;
+            const next = index.get(r.stops[d === 0 ? stopIdx + 1 : stopIdx - 1]);
+            const charge = legFare(net, net.stations[st], next === undefined ? undefined : net.stations[next], r.legLengths[leg]);
+            edges.push([node, node + 1, r.runTimes[leg] + BASE_DWELL + charge * fareWeight, RIDE, links[ri] + d * (m - 1) + k, charge]);
+          }
+          if (k > 0) edges.push([node, layer * S + st, 0, ALIGHT, -1, 0]);
         }
-        if (k > 0) edges.push([node, st, 0, ALIGHT, -1]);
       }
     }
   }
@@ -105,23 +142,26 @@ export function buildGraph(net: SimNetwork, weekend: boolean, period: number, li
       if (a === b) continue;
       const sa = net.stations[a], sb = net.stations[b];
       const d = Math.hypot(sa.x - sb.x, sa.y - sb.y);
-      if (d <= TRANSFER_LINK_DISTANCE) edges.push([a, b, walkSeconds(d) + 30, WALK, -1]);
+      if (d > TRANSFER_LINK_DISTANCE) continue;
+      for (const layer of [0, 1]) edges.push([layer * S + a, layer * S + b, walkSeconds(d) + 30, WALK, -1, 0]);
     }
   }
   const E = edges.length;
   const g: Graph = {
     n,
+    S,
     head: new Int32Array(n).fill(-1),
     next: new Int32Array(E),
     to: new Int32Array(E),
     cost: new Float32Array(E),
+    fare: new Float32Array(E),
     kind: new Uint8Array(E),
     ref: new Int32Array(E),
-    rsBase,
   };
-  edges.forEach(([from, to, cost, kind, ref], i) => {
+  edges.forEach(([from, to, cost, kind, ref, fare], i) => {
     g.to[i] = to;
     g.cost[i] = cost;
+    g.fare[i] = fare;
     g.kind[i] = kind;
     g.ref[i] = ref;
     g.next[i] = g.head[from];
@@ -208,12 +248,31 @@ export interface RouteState {
   satisfaction: Float32Array;
 }
 
-function sigmoid(x: number): number {
-  return 1 / (1 + Math.exp(-x));
-}
-
 export function satisfactionShare(sat: number): number {
   return 0.3 + 0.7 * sat;
+}
+
+/**
+ * How well the metro links each pair of stations, as the share of people who would take it
+ * at midday on a weekday, leaving fares aside: [s * S + t]. Over the years people who live
+ * by the metro come to work, shop and go out along it, so this steers where trips go.
+ */
+export function metroReach(net: SimNetwork, c: Catchments): Float32Array {
+  const S = net.stations.length;
+  const out = new Float32Array(S * S);
+  if (!net.routes.length) return out;
+  const g = buildGraph(net, false, periodOf(net.periods, 12 * 60 + 30), linkOffsets(net), 0);
+  for (let s = 0; s < S; s++) {
+    const tree = shortestFrom(g, s);
+    const a = net.stations[s];
+    for (let t = 0; t < S; t++) {
+      const time = Math.min(tree.dist[t], tree.dist[S + t]);
+      if (t === s || !isFinite(time)) continue;
+      const b = net.stations[t];
+      out[s * S + t] = metroShare(c.access[s] + time + c.access[t], Math.hypot(a.x - b.x, a.y - b.y));
+    }
+  }
+  return out;
 }
 
 /**
@@ -242,6 +301,7 @@ export function simulateDay(
   const transfers = new Float32Array(S);
   const hourly = new Float32Array(24);
   const revenue = new Float32Array(24);
+  const routeFares = new Float64Array(R);
   let total = 0;
   let potential = 0;
   const prof = curves(day.kind);
@@ -289,27 +349,28 @@ export function simulateDay(
           if (yesterday) demand += yesterday[p][t * S + s] * prevProf[p].ret.after[h];
         }
         if (demand < 1e-3) continue;
-        const ride = tree.dist[t];
+        const end = arrival(g, tree, t);
+        const ride = tree.dist[end];
         if (!isFinite(ride)) continue;
         const b = net.stations[t];
-        const fare = fareBetween(net, a, net.stations[t]);
-        const metro = c.access[s] + ride + c.access[t] + fare * SECONDS_PER_FARE_UNIT;
-        const walk = walkSeconds(Math.hypot(a.x - b.x, a.y - b.y));
-        const faster = sigmoid((walk - metro) / 120);
-        if (faster < 0.01) continue;
-        // Trace the path once for the share (weighted by ride time), then again to load it.
+        const choose = metroShare(c.access[s] + ride + c.access[t], Math.hypot(a.x - b.x, a.y - b.y));
+        if (choose < 0.005) continue;
+        // Trace the path once for the share (weighted by ride time) and the fare, then again to load it.
         let shareSum = 0;
         let rideSum = 0;
-        for (let v = t, e = tree.pred[v]; e >= 0; v = src[e], e = tree.pred[v]) {
+        let fare = 0;
+        for (let v = end, e = tree.pred[v]; e >= 0; v = src[e], e = tree.pred[v]) {
+          fare += g.fare[e];
           if (g.kind[e] === RIDE) {
             const r = routeOfLink(links, g.ref[e]);
-            shareSum += shares[r] * g.cost[e];
-            rideSum += g.cost[e];
+            const time = g.cost[e] - g.fare[e] * SECONDS_PER_FARE_UNIT;
+            shareSum += shares[r] * time;
+            rideSum += time;
           }
         }
         const share = rideSum > 0 ? shareSum / rideSum : 1;
-        potential += demand * faster;
-        const flow = demand * faster * share;
+        potential += demand * choose;
+        const flow = demand * choose * share;
         if (flow <= 0) continue;
         total += flow;
         hourly[h] += flow;
@@ -318,13 +379,15 @@ export function simulateDay(
         exits[t * 24 + h] += flow;
         // Walking the path backwards, so the journey's first boarding comes last.
         const boardedAt: number[] = [];
-        for (let v = t, e = tree.pred[v]; e >= 0; v = src[e], e = tree.pred[v]) {
+        for (let v = end, e = tree.pred[v]; e >= 0; v = src[e], e = tree.pred[v]) {
           const k = g.kind[e];
           if (k === RIDE) {
             linkFlow[g.ref[e] * 24 + h] += flow;
+            if (g.fare[e]) routeFares[routeOfLink(links, g.ref[e])] += flow * g.fare[e];
           } else if (k === BOARD) {
             boardings[g.ref[e] * 24 + h] += flow;
-            boardedAt.push(src[e]);
+            routeFares[g.ref[e]] += flow * g.fare[e];
+            boardedAt.push(src[e] % S);
             // The next ride edge starts at this boarding node; count the boarding there.
             const node = g.to[e];
             for (let x = g.head[node]; x >= 0; x = g.next[x]) {
@@ -391,6 +454,7 @@ export function simulateDay(
       avgSpeed,
       linkFlow: flows,
       dwell,
+      fares: routeFares[r],
     });
   }
 

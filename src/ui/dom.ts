@@ -88,8 +88,11 @@ export function hourChart(values: ArrayLike<number>, color: string, marker?: num
   return canvas;
 }
 
-/** A small line chart, newest value on the right. */
-export function lineChart(values: number[], color: string): HTMLCanvasElement {
+/**
+ * A small line chart, newest value on the right. "zero" keeps zero in range and draws a faint line there
+ * when the values cross it; "fit" scales to the values alone, for totals that move little day to day.
+ */
+export function lineChart(values: number[], color: string, range: "base" | "zero" | "fit" = "base"): HTMLCanvasElement {
   const canvas = h("canvas", { class: "chart" });
   requestAnimationFrame(() => {
     const dpr = window.devicePixelRatio || 1;
@@ -100,8 +103,20 @@ export function lineChart(values: number[], color: string): HTMLCanvasElement {
     const ctx = canvas.getContext("2d")!;
     ctx.scale(dpr, dpr);
     if (values.length < 2) return;
-    const max = Math.max(...values, 1);
-    const min = Math.min(...values, 0);
+    let max = Math.max(...values, 1);
+    let min = Math.min(...values, 0);
+    if (range === "fit") {
+      max = Math.max(...values);
+      min = Math.min(...values);
+      const pad = (max - min) * 0.1 || Math.abs(max) * 0.01 || 1;
+      max += pad;
+      min -= pad;
+    }
+    if (range === "zero" && min < 0) {
+      const y = hgt - 4 - ((0 - min) / (max - min || 1)) * (hgt - 8);
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--line");
+      ctx.fillRect(0, Math.round(y), w, 1);
+    }
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();

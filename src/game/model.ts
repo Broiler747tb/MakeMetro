@@ -65,7 +65,9 @@ export interface Headways {
 
 export interface Route {
   id: number;
-  name: string;
+  number: number; // shown in its badge; the lowest one free when the route was made
+  name: string; // "" until a name fits
+  autoName: boolean; // the name follows the route's stops until the player renames it
   color: string;
   stops: number[]; // station ids in order; trains run both ways and turn back at the ends
   trainType: string;
@@ -87,12 +89,20 @@ export interface Loan {
   takenAt: number; // game seconds
 }
 
+/** One day's books. Fares come in; the rest go out, except budget and loans, which come in when positive. */
 export interface DayRecord {
   day: number;
   weekend: boolean;
   riders: number;
-  revenue: number;
-  operating: number;
+  fares: number;
+  running: number; // trains in service
+  upkeep: number; // track, stations and depots
+  interest: number;
+  construction: number; // track, stations, depots and boring machines
+  trains: number; // new trains
+  budget: number; // from the city
+  loans: number; // borrowed less repaid
+  money?: number; // at the end of the day; missing in older saves
   satisfaction: number;
 }
 
@@ -105,8 +115,9 @@ export interface GameState {
   yearBudget: number;
   loans: Loan[];
   sandbox: { unlimitedMoney: boolean; instantBuild: boolean };
-  fare: number; // flat fare, and the base fare for the other modes
+  fare: number; // the network fare: flat fare, or the base fare for the other modes
   fares: FareRules;
+  lineFares: Record<number, number>; // route id -> its own boarding fare, kept out of undo
   periods: Period[];
   // Minutes after midnight; close may run past 24h into the next morning.
   serviceHours: { open: number; close: number };

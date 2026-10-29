@@ -36,6 +36,14 @@ const HOME_WEIGHT: number[][] = [
   [1, 1, 1, 1, 1, 1],
 ];
 
+// How strongly a good metro link draws trips to a place: one that everybody would reach
+// by metro draws 1 + METRO_PULL times the trips it otherwise would.
+const METRO_PULL = 10;
+// Real metros also carry people who come from beyond walking range by bus or tram, which
+// the game leaves out. Scaling up everyone's trips makes up for them, so that a grown
+// network carries about as many people as Moscow's metro.
+const TRIP_SCALE = 2;
+
 const WALK_SPEED = 1.3; // m/s
 const WALK_DETOUR = 1.25;
 const GATE_TIME = 30; // s, fare gates and walking inside the station
@@ -331,21 +339,36 @@ export function catchments(d: Demand, net: SimNetwork): Catchments {
   return { prod, attr, access, potentialResidents };
 }
 
-/** Daily outbound trips between every pair of stations, per purpose: [p][s * S + t]. */
-export function stationTrips(d: Demand, net: SimNetwork, c: Catchments, kind: DayKind, month: number): Float32Array[] {
+/**
+ * Daily outbound trips between every pair of stations, per purpose: [p][s * S + t].
+ * reach (from metroReach) pulls trips towards places the metro serves well; people still
+ * make the same number of trips, they just go to different places.
+ */
+export function stationTrips(d: Demand, net: SimNetwork, c: Catchments, kind: DayKind, month: number, reach?: Float32Array): Float32Array[] {
   const S = net.stations.length;
+  const g = d.grid;
   const out = PURPOSES.map(() => new Float32Array(S * S));
-  const rates = PURPOSES.map((_, p) => d.rate(kind, p, month));
+  const rates = PURPOSES.map((_, p) => d.rate(kind, p, month) * TRIP_SCALE);
+  const weight = new Float32Array(S);
   for (let s = 0; s < S; s++) {
     const a = net.stations[s];
-    for (let t = 0; t < S; t++) {
-      if (s === t) continue;
-      const b = net.stations[t];
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      for (let p = 0; p < P; p++) {
-        if (rates[p] <= 0) continue;
-        out[p][s * S + t] = rates[p] * c.prod[p][s] * c.attr[p][t] * Math.exp(-dist / DECAY[p]);
+    const col = Math.min(g.cols - 1, Math.max(0, Math.floor((a.x - g.x0) / g.cellSize)));
+    const row = Math.min(g.rows - 1, Math.max(0, Math.floor((a.y - g.y0) / g.cellSize)));
+    for (let p = 0; p < P; p++) {
+      if (rates[p] <= 0) continue;
+      let pulled = 0;
+      for (let t = 0; t < S; t++) {
+        if (s === t) continue;
+        const b = net.stations[t];
+        const w = c.attr[p][t] * Math.exp(-Math.hypot(a.x - b.x, a.y - b.y) / DECAY[p]);
+        const extra = reach ? METRO_PULL * reach[s * S + t] : 0;
+        weight[t] = w * (1 + extra);
+        pulled += w * extra;
       }
+      // Places the metro pulls towards take their trips from everywhere else.
+      const den = d.denomAt(p, row * g.cols + col);
+      const keep = den > 0 ? den / (den + pulled) : 1;
+      for (let t = 0; t < S; t++) if (s !== t) out[p][s * S + t] = rates[p] * c.prod[p][s] * weight[t] * keep;
     }
   }
   return out;

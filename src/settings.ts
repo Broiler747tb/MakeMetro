@@ -21,7 +21,8 @@ export type Action =
   | "finish"
   | "cancel"
   | "rotateLeft"
-  | "rotateRight";
+  | "rotateRight"
+  | "economy";
 
 export const ACTION_LABELS: Record<Action, string> = {
   select: "Select",
@@ -45,6 +46,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   cancel: "Cancel",
   rotateLeft: "Turn station or depot left",
   rotateRight: "Turn station or depot right",
+  economy: "Economy panel",
 };
 
 export const DEFAULT_KEYS: Record<Action, string> = {
@@ -69,6 +71,7 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   cancel: "escape",
   rotateLeft: "q",
   rotateRight: "e",
+  economy: "m",
 };
 
 export interface Settings {

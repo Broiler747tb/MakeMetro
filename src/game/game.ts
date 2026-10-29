@@ -1,8 +1,9 @@
 import type { City } from "../city/pack";
 import type { Buildings } from "../city/buildings";
 import { BUILD_TIME, COSTS, DEFAULT_HEADWAYS, DEFAULT_PERIODS, LINE_COLOURS, MIN_HEADWAY, trainType } from "./data";
-import type { GameState, Route } from "./model";
+import type { DayRecord, FareRules, GameState, Route } from "./model";
 import { Network } from "./network";
+import { lineTitle, suggestLineName } from "./lineNames";
 import { compileRoute, makeTrip, tripEnd, trainsFor, type CompiledRoute, type Trip } from "./service";
 import type { DayKind, DayResult, DaySpec, FromWorker, SimNetwork, ToWorker } from "../sim/protocol";
 
@@ -21,6 +22,41 @@ export interface LogEntry {
   important: boolean;
 }
 
+/** Money in and out over a day, by kind, plus the riders carried. */
+export type Ledger = Omit<DayRecord, "day" | "weekend" | "money" | "satisfaction">;
+type Cost = "running" | "upkeep" | "interest" | "construction" | "trains";
+
+function emptyLedger(): Ledger {
+  return { riders: 0, fares: 0, running: 0, upkeep: 0, interest: 0, construction: 0, trains: 0, budget: 0, loans: 0 };
+}
+
+/** Day-to-day profit: fares less what it takes to keep the trains running. Building isn't counted. */
+export function operatingProfit(l: Ledger): number {
+  return l.fares - l.running - l.upkeep - l.interest;
+}
+
+/** A whole fare setup: the network fare and its rules, and the lines that charge their own. */
+export interface Fares {
+  fare: number;
+  rules: FareRules;
+  lineFares: Record<number, number>;
+}
+
+/**
+ * How people feel about the average fare they pay, next to the one the city is used to:
+ * dear fares take up to a fifth off satisfaction when the city sets the budget, cheap ones
+ * add a little.
+ */
+export function fareMood(paid: number): number {
+  return Math.max(-0.2, Math.min(0.1, -0.15 * Math.log(Math.max(0.01, paid) / COSTS.fare)));
+}
+
+export interface Forecast {
+  riders: number;
+  fares: number;
+  routes: Map<number, { riders: number; fares: number }>;
+}
+
 export function newGameState(city: City): GameState {
   const budget = Math.round((city.manifest.totals.residents * COSTS.budgetPerResidentYear) / 1e6) * 1e6;
   return {
@@ -34,6 +70,7 @@ export function newGameState(city: City): GameState {
     sandbox: { unlimitedMoney: false, instantBuild: false },
     fare: COSTS.fare,
     fares: { mode: "flat", perKm: 0.1, zoneWidth: 8000, perZone: 0.5 },
+    lineFares: {},
     periods: DEFAULT_PERIODS.map((p) => ({ ...p })),
     serviceHours: { open: 5 * 60 + 30, close: 25 * 60 },
     weekendHours: { open: 6 * 60, close: 26 * 60 },
@@ -71,7 +108,9 @@ export class Game {
   today: DayResult | null = null;
   logEntries: LogEntry[] = [];
   /** Running totals for the current day. */
-  dayTally = { riders: 0, revenue: 0, operating: 0 };
+  dayTally: Ledger = emptyLedger();
+  /** Track, stations and depots in service cost this much a day. */
+  private upkeepPerDay = 0;
   private yearTally = { profit: 0, satSum: 0, days: 0 };
   private nextDeparture = new Map<string, number>();
   private listeners = new Map<GameEvent, Set<() => void>>();
@@ -168,11 +207,51 @@ export class Game {
         this.travelTimeCallbacks.get(msg.seq)?.(msg.minutes);
         this.travelTimeCallbacks.delete(msg.seq);
         break;
+      case "forecast": {
+        const done = this.forecastCallbacks.get(msg.seq);
+        this.forecastCallbacks.delete(msg.seq);
+        done?.({ riders: msg.trips, fares: msg.fares, routes: new Map(msg.routes.map((r) => [r.id, { riders: r.riders, fares: r.fares }])) });
+        break;
+      }
       case "error":
         console.error("simulation:", msg.message);
         this.dayBusy = false;
         break;
     }
+  }
+
+  private forecastCallbacks = new Map<number, (f: Forecast) => void>();
+
+  /** What today would look like with other fares, keeping everything else as it is. */
+  forecast(f: Fares): Promise<Forecast> {
+    const seq = ++this.daySeq;
+    const routeFares: Record<number, number | null> = {};
+    for (const r of this.state.routes) routeFares[r.id] = f.lineFares[r.id] ?? null;
+    return new Promise((done) => {
+      this.forecastCallbacks.set(seq, done);
+      this.post({ type: "forecast", fares: { ...f.rules, base: f.fare }, routeFares, day: this.daySpec(), seq });
+    });
+  }
+
+  /** The fares in force now. */
+  currentFares(): Fares {
+    return { fare: this.state.fare, rules: { ...this.state.fares }, lineFares: { ...this.state.lineFares } };
+  }
+
+  setFares(f: Fares) {
+    const s = this.state;
+    s.fare = f.fare;
+    s.fares = { ...f.rules };
+    s.lineFares = {};
+    for (const r of s.routes) if (f.lineFares[r.id] !== undefined) s.lineFares[r.id] = f.lineFares[r.id];
+    this.networkChanged(true);
+  }
+
+  /** How people feel about today's fares; see fareMood. */
+  fareMood(): number {
+    const r = this.today;
+    if (!r || r.trips < 1) return 0;
+    return fareMood(r.revenue.reduce((a, b) => a + b, 0) / r.trips);
   }
 
   private pendingCommit = -1;
@@ -340,7 +419,8 @@ export class Game {
     return this.state.sandbox.unlimitedMoney || this.state.money >= cost;
   }
 
-  spend(amount: number, quiet = false) {
+  spend(amount: number, kind: Cost, quiet = false) {
+    this.dayTally[kind] += amount;
     if (this.state.sandbox.unlimitedMoney) return;
     this.state.money -= amount;
     if (!quiet) this.emit("money");
@@ -356,6 +436,7 @@ export class Game {
     if (amount <= 0) return;
     this.state.loans.push({ principal: amount, balance: amount, rate: COSTS.loanRate, takenAt: this.state.time });
     this.state.money += amount;
+    this.dayTally.loans += amount;
     this.log(`Borrowed ${Math.round(amount / 1e6)}M at ${(COSTS.loanRate * 100).toFixed(0)}%.`);
     this.emit("money");
   }
@@ -365,6 +446,7 @@ export class Game {
       const pay = Math.min(amount, l.balance, Math.max(0, this.state.money));
       l.balance -= pay;
       this.state.money -= pay;
+      this.dayTally.loans -= pay;
       amount -= pay;
     }
     this.state.loans = this.state.loans.filter((l) => l.balance > 1);
@@ -390,7 +472,7 @@ export class Game {
     if (problems.length) return `Fix the plans first. ${problems[0]}`;
     if (!this.canAfford(cost)) return `Not enough money: this costs ${Math.round(cost / 1e6)}M.`;
     const knocked = this.net.buildPlanned(this.state.sandbox.instantBuild);
-    this.spend(cost);
+    this.spend(cost, "construction");
     this.clearHistory();
     if (knocked.length) this.log(`Construction started. ${knocked.length} building${knocked.length === 1 ? "" : "s"} demolished.`);
     else this.log("Construction started.");
@@ -403,9 +485,14 @@ export class Game {
   newRoute(): Route {
     const used = new Set(this.state.routes.map((r) => r.color));
     const color = LINE_COLOURS.find((c) => !used.has(c)) ?? LINE_COLOURS[this.state.routes.length % LINE_COLOURS.length];
+    const numbers = new Set(this.state.routes.map((r) => r.number));
+    let number = 1;
+    while (numbers.has(number)) number++;
     const r: Route = {
       id: this.state.nextId++,
-      name: `Line ${this.state.routes.length + 1}`,
+      number,
+      name: "",
+      autoName: true,
       color,
       stops: [],
       trainType: "standard",
@@ -489,19 +576,42 @@ export class Game {
       if (buy > 0) {
         this.state.fleet[r.id] = have + buy;
         usedCars += buy * r.cars;
-        this.spend(buy * r.cars * tt.carCost);
-        this.log(`${r.name}: bought ${buy} train${buy === 1 ? "" : "s"}.`);
+        this.spend(buy * r.cars * tt.carCost, "trains");
+        this.log(`${lineTitle(r)}: bought ${buy} train${buy === 1 ? "" : "s"}.`);
       }
       if (have + buy < need) {
         const why = room < need - have ? "depot space" : "money";
-        this.log(`${r.name} is short of trains (${have + buy} of ${need}); not enough ${why}.`, true);
+        this.log(`${lineTitle(r)} is short of trains (${have + buy} of ${need}); not enough ${why}.`, true);
       }
     }
   }
 
   // ---- network sync -----------------------------------------------------------
 
+  /** Keeps automatic line names in step with the stops; earlier lines get first pick. */
+  private nameRoutes() {
+    const centre = this.city.manifest.centre ?? [0, 0];
+    for (const r of this.state.routes) {
+      if (!r.autoName) continue;
+      const taken = new Set(this.state.routes.filter((x) => x !== r && x.name).map((x) => x.name.toLowerCase()));
+      const stops = r.stops.map((id) => this.net.stations.get(id)).filter((st) => st !== undefined);
+      r.name = suggestLineName(stops, centre, taken);
+    }
+  }
+
+  private computeUpkeep() {
+    let trackKm = 0;
+    for (const e of this.net.edges.values()) if (e.status === "built") trackKm += this.net.edgeLength(e) / 1000;
+    let stations = 0;
+    for (const st of this.net.stations.values()) if (st.status === "built") stations++;
+    let depots = 0;
+    for (const d of this.net.depots.values()) if (d.status === "built") depots++;
+    this.upkeepPerDay = (trackKm * COSTS.trackMaintPerKmYear + stations * COSTS.stationMaintYear + depots * COSTS.depotMaintYear) / 365;
+  }
+
   networkChanged(immediate = false) {
+    this.nameRoutes();
+    this.computeUpkeep();
     this.compiled.clear();
     this.readyRoutes.clear();
     for (const r of this.state.routes) {
@@ -546,6 +656,7 @@ export class Game {
         doors: tt.doorsPerCar * c.route.cars,
         headways: { weekday: eff(false), weekend: eff(true) },
         satisfaction: this.state.satisfaction[c.route.id] ?? 0.7,
+        fare: this.state.lineFares[c.route.id],
       };
     });
     const b = this.net.buildings;
@@ -560,6 +671,7 @@ export class Game {
       routes,
       periods: this.state.periods.map((p) => p.start),
       walkRange: this.state.walkRange,
+      centre: this.city.manifest.centre ?? [0, 0],
       fares: { ...this.state.fares, base: this.state.fare },
       removed,
     };
@@ -602,7 +714,7 @@ export class Game {
       const riders = this.today.hourly[hour] * frac;
       const fares = this.today.revenue[hour] * frac;
       this.dayTally.riders += riders;
-      this.dayTally.revenue += fares;
+      this.dayTally.fares += fares;
       if (!s.sandbox.unlimitedMoney) s.money += fares;
     }
 
@@ -615,9 +727,11 @@ export class Game {
       const c = this.compiled.get(trip.route);
       if (c) opHour += COSTS.trainHour + c.route.cars * COSTS.carHour;
     }
-    const op = opHour * frac;
-    this.dayTally.operating += op;
-    this.spend(op, true);
+    this.spend(opHour * frac, "running", true);
+    this.spend(this.upkeepPerDay * (dt / DAY), "upkeep", true);
+    let interest = 0;
+    for (const l of s.loans) interest += (l.balance * l.rate * dt) / (365 * DAY);
+    this.spend(interest, "interest", true);
 
     this.progressConstruction(dt / DAY);
   }
@@ -706,7 +820,8 @@ export class Game {
       const before = new Set([...this.compiled.keys()]);
       this.networkChanged();
       for (const id of this.compiled.keys()) {
-        if (!before.has(id)) this.log(`${this.net.routes.get(id)?.name} opens.`, true);
+        const r = this.net.routes.get(id);
+        if (r && !before.has(id)) this.log(`${lineTitle(r)} opens.`, true);
       }
     }
   }
@@ -719,7 +834,7 @@ export class Game {
 
   buyTbm(): boolean {
     if (!this.canAfford(BUILD_TIME.tbmCost)) return false;
-    this.spend(BUILD_TIME.tbmCost);
+    this.spend(BUILD_TIME.tbmCost, "construction");
     this.state.tbms++;
     this.log(`Bought a tunnel boring machine. You now have ${this.state.tbms}.`);
     return true;
@@ -728,30 +843,15 @@ export class Game {
   private newDay() {
     const s = this.state;
     // Close the books on yesterday.
-    let trackKm = 0;
-    for (const e of this.net.edges.values()) if (e.status === "built") trackKm += this.net.edgeLength(e) / 1000;
-    const stations = [...this.net.stations.values()].filter((x) => x.status === "built").length;
-    const depots = [...this.net.depots.values()].filter((x) => x.status === "built").length;
-    const maint = (trackKm * COSTS.trackMaintPerKmYear + stations * COSTS.stationMaintYear + depots * COSTS.depotMaintYear) / 365;
-    let interest = 0;
-    for (const l of s.loans) interest += (l.balance * l.rate) / 365;
-    this.spend(maint + interest);
-
+    const t = this.dayTally;
     const sats = Object.values(s.satisfaction);
     const avgSat = sats.length ? sats.reduce((a, b) => a + b, 0) / sats.length : 0;
-    s.history.push({
-      day: this.day - 1,
-      weekend: this.isWeekend(s.time - 1),
-      riders: Math.round(this.dayTally.riders),
-      revenue: this.dayTally.revenue,
-      operating: this.dayTally.operating + maint + interest,
-      satisfaction: avgSat,
-    });
+    s.history.push({ ...t, day: this.day - 1, weekend: this.isWeekend(s.time - 1), riders: Math.round(t.riders), money: s.money, satisfaction: avgSat });
     if (s.history.length > HISTORY_DAYS) s.history.shift();
-    this.yearTally.profit += this.dayTally.revenue - this.dayTally.operating - maint - interest;
-    this.yearTally.satSum += avgSat;
+    this.yearTally.profit += operatingProfit(t);
+    this.yearTally.satSum += Math.max(0, avgSat + this.fareMood());
     this.yearTally.days++;
-    this.dayTally = { riders: 0, revenue: 0, operating: 0 };
+    this.dayTally = emptyLedger();
 
     const d = this.date();
     if (d.getUTCMonth() === 0 && d.getUTCDate() === 1) this.newYear();
@@ -774,9 +874,11 @@ export class Game {
     const s = this.state;
     const y = this.yearTally;
     const sat = y.days ? y.satSum / y.days : 0;
-    const growth = 1 + Math.min(0.5, Math.max(0, y.profit / s.yearBudget)) + 0.1 * sat;
-    const next = Math.max(this.baseBudget, s.yearBudget * growth * (sat < 0.4 ? 0.9 : 1));
+    // The city judges each year afresh against its base budget, so a good year doesn't compound.
+    const growth = 1 + Math.min(0.5, Math.max(0, y.profit / this.baseBudget)) + 0.1 * sat;
+    const next = this.baseBudget * growth * (sat < 0.4 ? 0.9 : 1);
     s.yearBudget = Math.round(next / 1e6) * 1e6;
+    this.dayTally.budget += s.yearBudget;
     if (!s.sandbox.unlimitedMoney) s.money += s.yearBudget;
     this.log(`New year. The city gives you ${Math.round(s.yearBudget / 1e6)}M.`, true);
     this.yearTally = { profit: 0, satSum: 0, days: 0 };

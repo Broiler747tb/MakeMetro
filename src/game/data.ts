@@ -50,10 +50,10 @@ export const COSTS = {
   stationRefLength: 150,
   depot: 150e6,
   demolitionPerM2: 3000,
-  trainHour: 300,
-  carHour: 60,
+  trainHour: 200, // crew, power and wear for one train for an hour
+  carHour: 40, // and for each of its cars
   trackMaintPerKmYear: 400e3,
-  stationMaintYear: 1.5e6,
+  stationMaintYear: 1e6,
   depotMaintYear: 3e6,
   fare: 2,
   budgetPerResidentYear: 300,

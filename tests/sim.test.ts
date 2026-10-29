@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Demand, PURPOSES, catchments, stationTrips } from "../src/sim/demand";
-import { simulateDay } from "../src/sim/assign";
+import { metroReach, simulateDay } from "../src/sim/assign";
 import { DISTRICTS } from "../src/sim/districts";
 import type { DayKind, DaySpec, GridData, SimNetwork } from "../src/sim/protocol";
 
@@ -39,6 +39,7 @@ function line(headway: number, capacity = 1300): SimNetwork {
     routes: [{ id: 1, stops, runTimes: stops.slice(1).map(() => 90), legLengths: stops.slice(1).map(() => 1000), capacity, crush: capacity * 1.5, doors: 24, headways: { weekday: new Array(6).fill(headway), weekend: new Array(6).fill(headway) }, satisfaction: 0.7 }],
     periods: [330, 420, 600, 960, 1170, 1320],
     walkRange: 1000,
+    centre: [0, 0],
     fares: { mode: "flat", base: 2, perKm: 0, zoneWidth: 8000, perZone: 0 },
     removed: [],
   };
@@ -59,7 +60,20 @@ const demand = new Demand(city());
 
 function day(net: SimNetwork, d: DaySpec) {
   const c = catchments(demand, net);
-  return simulateDay(net, c, stationTrips(demand, net, c, d.kind, d.month), stationTrips(demand, net, c, d.previous, d.month), d, new Float32Array([0.7]));
+  const reach = metroReach(net, c);
+  const sat = new Float32Array(net.routes.length).fill(0.7);
+  return simulateDay(net, c, stationTrips(demand, net, c, d.kind, d.month, reach), stationTrips(demand, net, c, d.previous, d.month, reach), d, sat);
+}
+
+/** The line along the x axis, crossed by a second one along the y axis; they share the middle station. */
+function cross(ownFare?: number): SimNetwork {
+  const net = line(180);
+  const stations = [];
+  for (let k = -8; k <= 8; k++) if (k !== 0) stations.push({ id: k + 200, x: 0, y: k * 1000, level: -20, entrances: [] as [number, number][] });
+  net.stations.push(...stations);
+  const stops = [...stations.slice(0, 8).map((s) => s.id), 100, ...stations.slice(8).map((s) => s.id)];
+  net.routes.push({ ...net.routes[0], id: 2, stops, fare: ownFare });
+  return net;
 }
 
 test("a weekday line carries riders, peaking at rush hour", () => {
@@ -117,4 +131,37 @@ test("late weekend trains carry people home after midnight, and earn more nights
   assert.ok(late.hourly[0] + late.hourly[1] > 0, "Saturday night's crowd going home");
   assert.equal(early.hourly[0] + early.hourly[1], 0);
   assert.ok(late.trips > early.trips);
+});
+
+test("doubling the fare loses a fifth to a third of the riders", () => {
+  const cheap = day(line(180), spec("weekday", "weekday"));
+  const dear = line(180);
+  dear.fares.base = 4;
+  const r = day(dear, spec("weekday", "weekday")).trips / cheap.trips;
+  assert.ok(r > 0.65 && r < 0.82, `kept ${r.toFixed(2)}`);
+});
+
+test("lines on the network fare share one ticket, even when people change", () => {
+  const r = day(cross(), spec("weekday", "weekday"));
+  const fares = r.revenue.reduce((a, b) => a + b, 0);
+  assert.ok(r.stations.some((s) => s.transfers > 100), "people change lines");
+  assert.ok(Math.abs(fares - 2 * r.trips) < 0.01 * fares, `${fares} for ${r.trips} trips`);
+});
+
+test("a line with its own fare charges it to everyone who boards it", () => {
+  const r = day(cross(3), spec("weekday", "weekday"));
+  const own = r.routes[1];
+  const boardings = own.boardings.reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(own.fares - 3 * boardings) < 0.01 * own.fares, `${own.fares} from ${boardings} boardings`);
+  const total = r.revenue.reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(total - r.routes[0].fares - own.fares) < 0.01 * total, "every fare is some line's");
+});
+
+test("people who live by the metro come to travel along it", () => {
+  const net = line(180);
+  const c = catchments(demand, net);
+  const sum = (t: Float32Array[]) => t.reduce((a, p) => a + p.reduce((x, y) => x + y, 0), 0);
+  const without = sum(stationTrips(demand, net, c, "weekday", 6));
+  const along = sum(stationTrips(demand, net, c, "weekday", 6, metroReach(net, c)));
+  assert.ok(along > 1.5 * without, `${along} vs ${without}`);
 });

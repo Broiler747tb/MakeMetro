@@ -1,5 +1,5 @@
 import type { Map as MapLibre } from "maplibre-gl";
-import type { Game } from "../game/game";
+import { operatingProfit, type Game } from "../game/game";
 import type { BuildKind, TrackCount } from "../game/data";
 import { KIND_DEFAULT_LEVEL } from "../game/data";
 import { GameLayers, type Handle, type RouteOverlay } from "../map/gameLayers";
@@ -9,13 +9,15 @@ import { classifyDistricts, DISTRICTS, DISTRICT_COLOURS, DISTRICT_NAMES } from "
 import { applyTheme } from "../map/mapView";
 import { BUILDING_OPACITY } from "../map/style";
 import type { Scene3D } from "../render/scene3d";
-import { saveSettings, applySettings, keyOf, type Action, type Settings } from "../settings";
+import { saveSettings, applySettings, keyLabel, keyOf, type Action, type Settings } from "../settings";
 import { h, svg } from "./dom";
 import { icons } from "./icons";
 import * as fmt from "./format";
 import { MapTools } from "./tools";
 import { renderPanel } from "./panels";
-import { openFinance, openMenu, openSettings } from "./modals";
+import { openMenu, openSettings } from "./modals";
+import { EconomyPanel } from "./economy";
+import { FareDraft } from "./fares";
 
 export type Tool = "select" | "station" | "connect" | "track" | "depot" | "route" | "remove";
 export type Overlay = "none" | "population" | "jobs" | "districts" | "flows" | "crowding" | "travel";
@@ -57,6 +59,8 @@ export class App {
   depotHeading = 0;
   readonly layers: GameLayers;
   readonly tools: MapTools;
+  readonly economy: EconomyPanel;
+  readonly fareDraft: FareDraft;
 
   private panel = h("div", { class: "panel box" });
   private rail = h("div", { class: "rail box" });
@@ -67,6 +71,8 @@ export class App {
   private menuEl: HTMLElement | null = null;
   private clockEl = h("span", { class: "num" });
   private moneyEl = h("span", { class: "num" });
+  private profitEl = h("span", { class: "num" });
+  private incomeEl = h("span", { class: "num" });
   private ridersEl = h("span", { class: "num" });
   private savingEl = h("span", { class: "num" });
   private savingStat = h(
@@ -92,7 +98,9 @@ export class App {
   ) {
     this.layers = new GameLayers(map, game, settings.theme);
     this.tools = new MapTools(this);
-    document.body.append(this.rail, this.panel, this.bar, this.corner, this.legend, this.log);
+    this.economy = new EconomyPanel(this);
+    this.fareDraft = new FareDraft(this);
+    document.body.append(this.rail, this.panel, this.bar, this.corner, this.economy.el, this.legend, this.log);
     this.panel.addEventListener("pointerdown", () => (this.holding = true));
     window.addEventListener("pointerup", () => {
       if (!this.holding) return;
@@ -109,14 +117,21 @@ export class App {
       this.updateHandles();
       this.scene.rebuild();
       this.refreshOverlay();
+      this.fareDraft.refresh();
+      this.economy.markStale();
       this.dirty();
     });
     game.on("day", () => {
       this.layers.updateRoutes();
       if (this.overlay === "flows" || this.overlay === "crowding") this.refreshOverlay();
+      this.fareDraft.refresh();
+      this.economy.markStale();
       this.dirty();
     });
-    game.on("money", () => this.updateBar());
+    game.on("money", () => {
+      this.updateBar();
+      this.economy.markStale();
+    });
     game.on("log", () => this.renderLog());
     game.on("speed", () => this.updateBar());
     game.on("gameover", () => this.dirty());
@@ -135,6 +150,7 @@ export class App {
   /** Called every animation frame. */
   frame() {
     this.updateClock();
+    this.economy.frame();
     if (!this.game.buildingsReady) this.updateBar();
     if (this.panelDirty) {
       this.panelDirty = false;
@@ -206,6 +222,16 @@ export class App {
     this.layers.setHandles(out);
   }
 
+  /** Fare fields came or went in the draft, so the panels showing it need drawing again. */
+  faresLaidOut() {
+    this.dirty();
+    this.economy.markStale();
+  }
+
+  economyToggled() {
+    this.corner.querySelector('[data-role="economy"]')?.classList.toggle("on", this.economy.open);
+  }
+
   setActiveRoute(id: number | null) {
     this.activeRoute = id;
     this.layers.highlightRoute(id);
@@ -240,10 +266,12 @@ export class App {
       speeds.append(b);
     });
     const clock = h("div", { class: "clock" }, this.clockEl);
-    const money = h("div", { class: "stat clickable", title: "Finances", onclick: () => openFinance(this) }, h("small", null, "Money"), this.moneyEl);
+    const money = h("div", { class: "stat clickable", title: `Economy (${keyLabel(this.settings.keys.economy)})`, onclick: () => this.economy.toggle() }, h("small", null, "Money"), this.moneyEl);
+    const profit = h("div", { class: "stat", title: "Fares less running costs, upkeep and interest so far today" }, h("small", null, "Today"), this.profitEl);
+    const income = h("div", { class: "stat", title: "Fares coming in at the moment" }, h("small", null, "Fares"), this.incomeEl);
     const riders = h("div", { class: "stat" }, h("small", null, "Riders today"), this.ridersEl);
     const build = h("div", null, this.buildBtn);
-    this.bar.append(speeds, clock, money, riders, this.savingStat, build);
+    this.bar.append(speeds, clock, money, profit, income, riders, this.savingStat, build);
     this.updateBar();
   }
 
@@ -270,6 +298,11 @@ export class App {
       this.clockEl.textContent = text;
       this.ridersEl.textContent = fmt.count(g.dayTally.riders);
       this.moneyEl.textContent = g.state.sandbox.unlimitedMoney ? "Unlimited" : fmt.money(g.state.money);
+      const profit = operatingProfit(g.dayTally);
+      this.profitEl.textContent = Math.abs(profit) < 1 ? "—" : `${profit > 0 ? "+" : ""}${fmt.money(profit)}`;
+      this.profitEl.className = `num ${profit >= 1 ? "good" : profit <= -1 ? "bad" : ""}`;
+      const hour = Math.floor(g.minuteOfDay() / 60);
+      this.incomeEl.textContent = `${fmt.money(g.today?.revenue[hour] ?? 0)}/h`;
       if (this.overlay === "flows" || this.overlay === "crowding") {
         const hour = Math.floor(g.minuteOfDay() / 60);
         if (hour !== this.overlayHour) this.refreshOverlay();
@@ -294,12 +327,14 @@ export class App {
 
   private buildCorner() {
     const overlayBtn = h("button", { title: "Data overlays", onclick: () => this.toggleOverlayMenu() }, svg(icons.layers), h("span", { class: "label" }, "Overlays"));
+    const economyBtn = h("button", { title: `Money, fares and loans (${keyLabel(this.settings.keys.economy)})`, onclick: () => this.economy.toggle() }, svg(icons.economy), h("span", { class: "label" }, "Economy"));
+    economyBtn.dataset.role = "economy";
     const xray = h("button", { title: "X-ray: see tunnels at their real depth (U)", onclick: () => this.toggleXray() }, svg(icons.xray));
     xray.dataset.role = "xray";
     const pitch = h("button", { title: "Tilt the camera", onclick: () => this.togglePitch() }, svg(icons.pitch));
     const theme = h("button", { title: "Light or dark", onclick: () => this.toggleTheme() }, svg(icons.theme));
     const menu = h("button", { title: "Menu", onclick: () => openMenu(this, this.onLoad, this.onNewGame) }, svg(icons.menu));
-    this.corner.append(overlayBtn, pitch, xray, theme, menu);
+    this.corner.append(overlayBtn, economyBtn, pitch, xray, theme, menu);
   }
 
   private toggleOverlayMenu() {
@@ -553,6 +588,9 @@ export class App {
         break;
       case "xray":
         this.toggleXray();
+        break;
+      case "economy":
+        this.economy.toggle();
         break;
       case "deeper":
       case "shallower":
