@@ -40,21 +40,21 @@ export const KIND_LEVEL_RANGE: Record<BuildKind, [number, number]> = {
 
 export const COSTS = {
   // per km of double track
-  trackPerKm: { bored: 150e6, cut: 100e6, elevated: 65e6, grade: 30e6 } as Record<BuildKind, number>,
-  boredPerMetreDepth: 3e6, // per km, for every metre below 15 m
-  bridgePerKm: 120e6,
+  trackPerKm: { bored: 90e6, cut: 60e6, elevated: 40e6, grade: 18e6 } as Record<BuildKind, number>,
+  boredPerMetreDepth: 1.8e6, // per km, for every metre below 15 m
+  bridgePerKm: 72e6,
   trackCountFactor: { 1: 0.7, 2: 1, 4: 1.8 } as Record<TrackCount, number>,
-  station: { bored: 100e6, cut: 60e6, elevated: 40e6, grade: 18e6 } as Record<BuildKind, number>,
-  stationPerMetreDepth: 2e6,
+  station: { bored: 60e6, cut: 36e6, elevated: 24e6, grade: 11e6 } as Record<BuildKind, number>,
+  stationPerMetreDepth: 1.2e6,
   stationSideFactor: 1.1,
   stationRefLength: 150,
-  depot: 150e6,
-  demolitionPerM2: 3000,
-  trainHour: 200, // crew, power and wear for one train for an hour
-  carHour: 40, // and for each of its cars
-  trackMaintPerKmYear: 400e3,
-  stationMaintYear: 1e6,
-  depotMaintYear: 3e6,
+  depot: 90e6,
+  demolitionPerM2: 1800,
+  trainHour: 100, // crew, power and wear for one train for an hour
+  carHour: 20, // and for each of its cars
+  trackMaintPerKmYear: 200e3,
+  stationMaintYear: 500e3,
+  depotMaintYear: 1.5e6,
   fare: 2,
   budgetPerResidentYear: 300,
   loanRate: 0.05,
@@ -69,7 +69,7 @@ export const BUILD_TIME = {
   station: { bored: 30, cut: 20, elevated: 14, grade: 7 } as Record<BuildKind, number>,
   depot: 20,
   startingTbms: 2,
-  tbmCost: 25e6,
+  tbmCost: 15e6,
 };
 
 // Track corridor half-width by number of tracks, for demolition checks.

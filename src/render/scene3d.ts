@@ -59,10 +59,6 @@ export class Scene3D implements CustomLayerInterface {
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
     this.renderer.autoClear = false;
 
-    const [lon0, lat0] = this.game.city.proj.toLngLat(0, 0);
-    const origin = MercatorCoordinate.fromLngLat([lon0, lat0], 0);
-    const s = origin.meterInMercatorCoordinateUnits();
-    this.model.makeTranslation(origin.x, origin.y, origin.z).scale(new THREE.Vector3(s, -s, s));
 
     // The same sun as the buildings and their shadows: south-south-west, 50 degrees up.
     this.sun.position.set(-0.32, -0.56, 0.77);
@@ -349,9 +345,29 @@ export class Scene3D implements CustomLayerInterface {
   }
 
   private setCamera(options: CustomRenderMethodInput) {
+    this.placeModel();
     const mvp = new THREE.Matrix4().fromArray(options.defaultProjectionData.mainMatrix as unknown as number[]);
     this.camera.projectionMatrix = mvp.multiply(this.model);
     this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+  }
+
+  /**
+   * Maps local metres onto the map's Mercator plane. East-west is exact everywhere, since both are
+   * linear in longitude. North-south is not: one scale for the whole city put things tens of metres
+   * off towards the edges, so the scale is taken at the view centre, where it is exact, and the error
+   * stays under a metre for a couple of kilometres around it.
+   */
+  private placeModel() {
+    const { lon0, mPerDegLon, mPerDegLat } = this.game.city.proj.p;
+    const centre = this.map.getCenter();
+    const [, cy] = this.game.city.proj.toLocal(centre.lng, centre.lat);
+    const at = MercatorCoordinate.fromLngLat(centre, 0);
+    const west = MercatorCoordinate.fromLngLat([lon0, centre.lat], 0);
+    const cos = Math.cos((centre.lat * Math.PI) / 180);
+    const kx = 1 / (360 * mPerDegLon);
+    const ky = -1 / (360 * cos * mPerDegLat);
+    const kz = at.meterInMercatorCoordinateUnits();
+    this.model.makeTranslation(west.x, at.y - cy * ky, 0).scale(new THREE.Vector3(kx, ky, kz));
   }
 
   onRemove() {
